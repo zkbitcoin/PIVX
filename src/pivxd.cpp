@@ -36,6 +36,20 @@
  * Use the buttons <code>Namespaces</code>, <code>Classes</code> or <code>Files</code> at the top of the page to start navigating the code.
  */
 
+#include "external/external_api.h"
+
+// Force linker to keep external API symbols even if not used directly in code.
+#if defined(__GNUC__)
+__attribute__((used))
+#endif
+static void* volatile pivx_external_keep[] = {
+    (void*)&pivx_external_init,
+    (void*)&pivx_external_mn_step,
+    (void*)&pivx_external_pos_step,
+    (void*)&pivx_external_shield_step,
+    (void*)&pivx_external_shutdown,
+};
+
 void WaitForShutdown()
 {
     while (!ShutdownRequested()) {

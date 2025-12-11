@@ -39,7 +39,8 @@
 #include <string.h>
 #include <stdint.h>
 
-#ifndef __FreeBSD__
+//#ifndef __FreeBSD__
+#if !defined(__FreeBSD__) && !defined(__APPLE__)
 static inline void be32enc(void *pp, uint32_t x)
 {
     uint8_t *p = (uint8_t *)pp;
