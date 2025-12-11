@@ -1,33 +1,39 @@
 // src/external/external_api.cpp
 #include "external_api.h"
-#include <string>
+#include "environment.h"
 
-// NOTE: stub implementation for wiring & build testing.
-// We'll replace internals with real MN / PoS / Shield logic later.
+// Direct functions implemented in other files:
+extern "C" const char* pivx_external_mn_step();
+extern "C" const char* pivx_external_pos_step();
+extern "C" const char* pivx_external_shield_step();
 
-static std::string g_last;
+extern "C" {
 
-static const char* ret(const std::string& s) {
-    g_last = s;
-    return g_last.c_str();
-}
+    PIVX_EXTERNAL_API void pivx_external_init()
+    {
+        init_environment();
+    }
 
-void pivx_external_init(void) {
-    // Later: SelectParams(REGTEST), minimal init, etc.
-}
+    PIVX_EXTERNAL_API void pivx_external_shutdown()
+    {
+        // Nothing to do for regtest/in-memory environment
+    }
 
-const char* pivx_external_mn_step(void) {
-    return ret(R"({"ok":true,"module":"masternode","step":"stub"})");
-}
+    // ------------------- EXPORTED API -------------------
 
-const char* pivx_external_pos_step(void) {
-    return ret(R"({"ok":true,"module":"pos","step":"stub"})");
-}
+    PIVX_EXTERNAL_API const char* pivx_external_mn()
+    {
+        return pivx_external_mn_step();
+    }
 
-const char* pivx_external_shield_step(void) {
-    return ret(R"({"ok":true,"module":"shielded","step":"stub"})");
-}
+    PIVX_EXTERNAL_API const char* pivx_external_pos()
+    {
+        return pivx_external_pos_step();
+    }
 
-void pivx_external_shutdown(void) {
-    // Later: cleanup if we allocate anything
-}
+    PIVX_EXTERNAL_API const char* pivx_external_shield()
+    {
+        return pivx_external_shield_step();
+    }
+
+} // extern "C"

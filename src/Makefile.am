@@ -27,6 +27,7 @@ BITCOIN_INCLUDES += -I$(srcdir)/secp256k1/include
 BITCOIN_INCLUDES += -I$(srcdir)/chiabls/src
 BITCOIN_INCLUDES += -I$(srcdir)/chiabls/contrib/relic/include
 BITCOIN_INCLUDES += $(UNIVALUE_CFLAGS)
+BITCOIN_INCLUDES += -I$(srcdir)/external
 
 LIBBITCOIN_SERVER=libbitcoin_server.a
 LIBBITCOIN_COMMON=libbitcoin_common.a
@@ -667,7 +668,11 @@ nodist_libbitcoin_util_a_SOURCES = $(srcdir)/obj/build.h
 # pivxd binary #
 pivxd_SOURCES = \
   pivxd.cpp \
-  external/external_api.cpp
+  external/external_api.cpp \
+  external/environment.cpp \
+  external/mn.cpp \
+  external/pos.cpp \
+  external/shield.cpp
 pivxd_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 pivxd_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 pivxd_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)

@@ -38,10 +38,20 @@
 
 #include "external/external_api.h"
 
-// Force linker to keep external API symbols even if not used directly in code.
-#if defined(__GNUC__)
-__attribute__((used))
+// ------------------------------------------------------------
+//  Force-export external API symbols so dlopen() can find them.
+//  macOS + Linux both aggressively strip unused symbols during LTO.
+//
+//  - volatile prevents optimization
+//  - __attribute__((used)) prevents dead stripping
+// ------------------------------------------------------------
+#if defined(__GNUC__) || defined(__clang__)
+#define KEEP_SYMBOLS __attribute__((used))
+#else
+#define KEEP_SYMBOLS
 #endif
+
+KEEP_SYMBOLS
 static void* volatile pivx_external_keep[] = {
     (void*)&pivx_external_init,
     (void*)&pivx_external_mn_step,

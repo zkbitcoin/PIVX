@@ -1206,3 +1206,9 @@ void ThreadCheckMasternodes()
         // nothing, thread interrupted.
     }
 }
+
+std::map<COutPoint, MasternodeRef> CMasternodeMan::Copy() const
+{
+    LOCK(cs);
+    return mapMasternodes;
+}

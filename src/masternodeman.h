@@ -193,6 +193,8 @@ public:
     bool IsWithinDepth(const uint256& nHash, int depth) const;
     uint256 GetBlockHashToPing() const { return GetHashAtHeight(GetBestHeight() - MNPING_DEPTH); }
     std::vector<uint256> GetCachedBlocks() const { return cvLastBlockHashes.GetCache(); }
+
+    std::map<COutPoint, MasternodeRef> Copy() const;
 };
 
 void ThreadCheckMasternodes();
