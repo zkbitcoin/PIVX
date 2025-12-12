@@ -8,6 +8,7 @@
 // ============================================================================
 
 #include "environment.h"
+#include "external/logger.h"
 
 #include "chainparams.h"
 #include "chain.h"
@@ -22,9 +23,6 @@
 #include "key.h"      // ECC_Start / ECC_Stop
 
 #include <memory>
-#include <cstdio>
-
-#define ENVDBG(x) printf("[ENVDBG] %s\n", x)
 
 // ============================================================================
 // ECC (VERIFY context must be static lifetime)
@@ -46,12 +44,18 @@ static CBlockIndex* g_genesis = nullptr;
 // ============================================================================
 static void mock_blockindex()
 {
-    ENVDBG("mock_blockindex: enter");
-    if (g_genesis) return;
+    LOG_INFO("ENV", "Creating mock blockchain");
+
+    if (g_genesis) {
+        LOG_INFO("ENV", "Mock blockchain already initialized");
+        return;
+    }
 
     // ------------------------------------------------------------
     // Fake previous block
     // ------------------------------------------------------------
+    LOG_INFO("ENV", "Creating synthetic previous block");
+
     CBlockIndex* prev = new CBlockIndex();
     prev->nHeight = -1;
     prev->nTime   = GetTime() - 200;
@@ -70,6 +74,8 @@ static void mock_blockindex()
     // ------------------------------------------------------------
     // Fake genesis block
     // ------------------------------------------------------------
+    LOG_INFO("ENV", "Creating synthetic genesis block");
+
     g_genesis = new CBlockIndex();
     g_genesis->nHeight = 0;
     g_genesis->nTime   = GetTime() - 100;
@@ -88,7 +94,7 @@ static void mock_blockindex()
     chainActive.SetTip(g_genesis);
     pindexBestHeader = g_genesis;
 
-    ENVDBG("mock_blockindex: done");
+    LOG_INFO("ENV", "Mock blockchain tip set successfully");
 }
 
 // ============================================================================
@@ -96,7 +102,7 @@ static void mock_blockindex()
 // ============================================================================
 static void mock_sporks()
 {
-    ENVDBG("mock_sporks (noop)");
+    LOG_WARN("ENV", "Sporks are disabled (demo environment)");
 }
 
 // ============================================================================
@@ -104,7 +110,7 @@ static void mock_sporks()
 // ============================================================================
 static void mock_mn()
 {
-    ENVDBG("mock_mn");
+    LOG_INFO("ENV", "Masternode subsystem mocked (no network / no wallet)");
 }
 
 // ============================================================================
@@ -112,29 +118,46 @@ static void mock_mn()
 // ============================================================================
 void init_environment()
 {
-    if (g_env_ready) return;
+    if (g_env_ready) {
+        LOG_INFO("ENV", "Environment already initialized");
+        return;
+    }
 
-    ENVDBG("init_environment: ENTER");
+    // Logger should already be initialized by loader or test harness
+    LOG_INFO("ENV", "Initializing mock environment");
 
     // ------------------------------------------------------------
-    // 🔑 ECC INITIALIZATION (THIS WAS THE MISSING PIECE)
+    // ECC INITIALIZATION
     // ------------------------------------------------------------
-    // VERIFY context: handled by static ECCVerifyHandle above
+    // VERIFY context: handled by static ECCVerifyHandle
     // SIGN context: MUST be initialized manually
+    LOG_INFO("ENV", "Initializing ECC SIGN context");
     ECC_Start();
 
+    // ------------------------------------------------------------
+    // Chain parameters
+    // ------------------------------------------------------------
+    LOG_INFO("ENV", "Selecting REGTEST chain parameters");
     SelectParams(CBaseChainParams::REGTEST);
     gArgs.SoftSetArg("-datadir", "/tmp/pivx_mock_env");
+
+    // ------------------------------------------------------------
+    // EvoDB + deterministic MN manager
+    // ------------------------------------------------------------
+    LOG_INFO("ENV", "Initializing EvoDB and deterministic MN manager");
 
     g_evoDb = std::make_unique<CEvoDB>(1 << 20); // 1 MB cache
     deterministicMNManager = std::make_unique<CDeterministicMNManager>(*g_evoDb);
 
+    // ------------------------------------------------------------
+    // Mock subsystems
+    // ------------------------------------------------------------
     mock_blockindex();
     mock_sporks();
     mock_mn();
 
     g_env_ready = true;
-    ENVDBG("init_environment: COMPLETE");
+    LOG_INFO("ENV", "Environment initialization complete");
 }
 
 // ============================================================================
@@ -142,7 +165,13 @@ void init_environment()
 // ============================================================================
 void advance_time(int64_t sec)
 {
-    if (g_genesis) g_genesis->nTime += sec;
+    if (!g_genesis) {
+        LOG_WARN("ENV", "advance_time called before genesis initialization");
+        return;
+    }
+
+    g_genesis->nTime += sec;
+    LOG_INFO("ENV", "Advanced mock chain time by " + std::to_string(sec) + " seconds");
 }
 
 // ============================================================================
@@ -153,6 +182,6 @@ static DummyWalletStruct dummyWallet;
 
 CWallet& wallet()
 {
-    // Never used — satisfies linker only
+    LOG_WARN("ENV", "Dummy wallet accessed (linker stub only)");
     return *(CWallet*)&dummyWallet;
 }

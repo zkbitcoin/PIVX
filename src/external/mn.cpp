@@ -1,13 +1,21 @@
 // external/mn.cpp
 // ============================================================================
 // Stateless Masternode Demo (UIX)
-// Each call generates a NEW masternode with fresh keys,
-// signs a real ping, injects it into mnodeman,
-// and returns a JSON snapshot.
+//
+// Each call:
+//  • Resets masternode state (stateless demo)
+//  • Generates fresh ECDSA keys
+//  • Creates a synthetic masternode
+//  • Signs a real masternode ping
+//  • Injects it into mnodeman (in-memory only)
+//  • Returns a JSON snapshot for UI
+//
+// ⚠️ No wallet, no real collateral, no economic validation
 // ============================================================================
 
 #include "external/mn.h"
 #include "external/environment.h"
+#include "external/logger.h"
 
 #include "masternodeman.h"
 #include "masternode.h"
@@ -22,9 +30,6 @@
 
 #include <string>
 #include <sstream>
-#include <cstdio>
-
-#define MNDBG(x) printf("[MNDBG] %s\n", x)
 
 // ----------------------------------------------------------------------------
 // ABI-safe return buffer
@@ -41,7 +46,7 @@ static const char* ret(const std::string& s)
 // ----------------------------------------------------------------------------
 static void reset_demo_state()
 {
-    MNDBG("reset_demo_state");
+    LOG_INFO("MN", "Resetting masternode list (stateless demo run)");
     mnodeman.Clear();
 }
 
@@ -55,13 +60,15 @@ static void generate_keys(
     CPubKey& collateralPubKey
 )
 {
-    MNDBG("generate_keys");
+    LOG_INFO("MN", "Generating fresh masternode and collateral key pairs");
 
     mnKey.MakeNewKey(true);
     mnPubKey = mnKey.GetPubKey();
 
     collateralKey.MakeNewKey(true);
     collateralPubKey = collateralKey.GetPubKey();
+
+    LOG_INFO("MN", "Key generation complete (compressed secp256k1)");
 }
 
 // ----------------------------------------------------------------------------
@@ -72,8 +79,9 @@ static CMasternode create_and_add_mn(
     const CPubKey& mnPubKey
 )
 {
-    MNDBG("create_and_add_mn");
+    LOG_INFO("MN", "Creating synthetic masternode (no wallet, demo collateral)");
 
+    // Synthetic collateral (NOT economically valid)
     COutPoint collateral(uint256S("01"), 0);
 
     CMasternode mn;
@@ -81,6 +89,8 @@ static CMasternode create_and_add_mn(
     mn.protocolVersion = PROTOCOL_VERSION;
     mn.sigTime = GetAdjustedTime();
     mn.addr = LookupNumeric("127.0.0.1", 51472);
+
+    LOG_INFO("MN", "Signing masternode ping using real ECDSA");
 
     CMasternodePing ping(
         mn.vin,
@@ -92,6 +102,9 @@ static CMasternode create_and_add_mn(
     mn.SetLastPing(ping);
 
     mnodeman.Add(mn);
+
+    LOG_INFO("MN", "Masternode injected into in-memory manager (PRE_ENABLED)");
+
     return mn;
 }
 
@@ -120,6 +133,7 @@ static std::string mn_to_json(
     o << "\"collateral_pubkey\":\"" << HexStr(collateralPubKey) << "\"";
     o << "},";
 
+    // Demo only — NEVER expose private keys outside UIX
     o << "\"demo_private_keys\":{";
     o << "\"masternode_privkey\":\"" << KeyIO::EncodeSecret(mnKey) << "\",";
     o << "\"collateral_privkey\":\"" << KeyIO::EncodeSecret(collateralKey) << "\"";
@@ -135,18 +149,19 @@ static std::string mn_to_json(
 extern "C"
 const char* pivx_external_mn_step(void)
 {
-    MNDBG("pivx_external_mn_step: ENTER");
+    LOG_INFO("MN", "Starting masternode demo step");
 
     init_environment();
     reset_demo_state();
 
-    CKey mnKey, collateralKey;
+    CKey    mnKey, collateralKey;
     CPubKey mnPubKey, collateralPubKey;
 
     generate_keys(mnKey, mnPubKey, collateralKey, collateralPubKey);
     CMasternode mn = create_and_add_mn(mnKey, mnPubKey);
 
-    MNDBG("pivx_external_mn_step: EXIT");
+    LOG_INFO("MN", "Masternode demo step complete");
+
     return ret(mn_to_json(
         mn,
         mnPubKey,

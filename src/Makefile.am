@@ -672,7 +672,8 @@ pivxd_SOURCES = \
   external/environment.cpp \
   external/mn.cpp \
   external/pos.cpp \
-  external/shield.cpp
+  external/shield.cpp \
+  external/logger.cpp
 pivxd_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 pivxd_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 pivxd_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)

@@ -1,8 +1,24 @@
-// external/pos.cpp — Level 1 PoS Demo
+// external/pos.cpp
+// ============================================================================
+// Level 1 Proof-of-Stake Demo (UIX)
+//
+// Demonstrates:
+//  • Stake kernel construction
+//  • Kernel hash computation
+//  • Difficulty / target check
+//
+// DOES NOT demonstrate:
+//  • Wallet ownership
+//  • UTXO maturity
+//  • Economic validation
+//  • Block acceptance / consensus
+//
+// This is a cryptographic + kernel-level demo only.
+// ============================================================================
 
 #include "external/pos.h"
-#include "external/external_api.h"
 #include "external/environment.h"
+#include "external/logger.h"
 
 #include "chain.h"
 #include "kernel.h"
@@ -16,8 +32,9 @@
 #include <memory>
 #include <string>
 
-#define POSDBG(x) printf("[POSDBG] %s\n", x)
-
+// ----------------------------------------------------------------------------
+// ABI-safe return buffer
+// ----------------------------------------------------------------------------
 static std::string last_json;
 
 /***************************************************************
@@ -53,18 +70,21 @@ public:
         return ss;
     }
 
-    // NOT virtual in PIVX → no override
+    // Not virtual in PIVX → intentionally NOT overridden
     bool CreateTxIn(CWallet*, CTxIn&, uint256) const { return false; }
     bool CreateTxOuts(CWallet*, std::vector<CTxOut>&, CAmount) const { return false; }
 };
 
 /***************************************************************
- * Create fake stake
+ * Create fake stake input
  ***************************************************************/
 static std::unique_ptr<CStakeInput> CreateFakeStake(const CBlockIndex* tip)
 {
+    LOG_INFO("POS", "Creating synthetic stake input (kernel-valid only)");
+
     CTxOut out(5000 * COIN, CScript() << OP_TRUE);
     COutPoint op(uint256S("01"), 0);
+
     return std::make_unique<CFakeStake>(out, op, tip);
 }
 
@@ -80,33 +100,47 @@ static uint256 GetKernelHash(const CBlock& block,
 }
 
 /***************************************************************
- * PUBLIC API
+ * PUBLIC UIX ENTRY POINT
  ***************************************************************/
 extern "C"
 const char* pivx_external_pos_step()
 {
-    POSDBG("ENTER");
+    LOG_INFO("POS", "Starting Proof-of-Stake Level 1 demo");
 
     init_environment();
 
+    // ------------------------------------------------------------
+    // Chain tip
+    // ------------------------------------------------------------
     const CBlockIndex* tip = chainActive.Tip();
     if (!tip) {
+        LOG_ERROR("POS", "No chain tip available");
         last_json = "{\"module\":\"pos\",\"error\":\"no chain tip\"}";
         return last_json.c_str();
     }
 
+    LOG_INFO("POS", "Using mock chain tip at height " + std::to_string(tip->nHeight));
+
+    // ------------------------------------------------------------
+    // Stake input
+    // ------------------------------------------------------------
     auto stake = CreateFakeStake(tip);
     if (!stake) {
+        LOG_ERROR("POS", "Stake input creation failed");
         last_json = "{\"module\":\"pos\",\"error\":\"stake creation failed\"}";
         return last_json.c_str();
     }
 
-    // Build fake block
+    // ------------------------------------------------------------
+    // Build synthetic block
+    // ------------------------------------------------------------
+    LOG_INFO("POS", "Constructing synthetic PoS block");
+
     CBlock block;
     block.nBits = tip->nBits;
     block.nTime = tip->nTime + 60;
 
-    // coinbase
+    // coinbase (required but meaningless for PoS demo)
     {
         CMutableTransaction cb;
         cb.nVersion = CTransaction::SAPLING;
@@ -129,12 +163,26 @@ const char* pivx_external_pos_step()
         block.vtx.emplace_back(MakeTransactionRef(tx));
     }
 
+    // ------------------------------------------------------------
+    // Stake kernel evaluation
+    // ------------------------------------------------------------
+    LOG_INFO("POS", "Evaluating stake kernel against difficulty target");
+
     int64_t newTime = block.nTime;
     bool hit = Stake(tip, stake.get(), tip->nBits, newTime);
     block.nTime = newTime;
 
     uint256 kernelHash = GetKernelHash(block, tip, stake.get());
 
+    LOG_INFO(
+        "POS",
+        std::string("Kernel evaluation complete — target ")
+        + (hit ? "HIT" : "MISSED")
+    );
+
+    // ------------------------------------------------------------
+    // JSON output
+    // ------------------------------------------------------------
     last_json = strprintf(
         "{"
           "\"module\":\"pos\","
@@ -145,8 +193,15 @@ const char* pivx_external_pos_step()
           "},"
           "\"validation\":{"
             "\"kernel\":{\"checked\":true,\"valid\":true},"
-            "\"difficulty\":{\"checked\":true,\"bits\":\"%08x\",\"target_hit\":%s},"
-            "\"economic\":{\"checked\":false,\"reason\":\"Level 1 demo — no wallet\"}"
+            "\"difficulty\":{"
+                "\"checked\":true,"
+                "\"bits\":\"%08x\","
+                "\"target_hit\":%s"
+            "},"
+            "\"economic\":{"
+                "\"checked\":false,"
+                "\"reason\":\"Level 1 demo — no wallet or UTXO ownership\""
+            "}"
           "},"
           "\"environment\":{"
             "\"level\":1,"
@@ -160,6 +215,7 @@ const char* pivx_external_pos_step()
         hit ? "true" : "false"
     );
 
-    POSDBG("EXIT OK");
+    LOG_INFO("POS", "Proof-of-Stake Level 1 demo complete");
+
     return last_json.c_str();
 }
