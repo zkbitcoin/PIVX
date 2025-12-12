@@ -42,8 +42,6 @@ static const char* ret(const std::string& s)
 extern "C"
 const char* pivx_external_shield_step(void)
 {
-    Flow::Clear();
-
     Flow::Step({
         FlowScope::EXEC,
         FlowDomain::SHIELD,

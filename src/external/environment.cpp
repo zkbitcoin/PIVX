@@ -222,7 +222,7 @@ void init_environment()
     GetDataDir(true);
 
     LOG_INFO("ENV", "Resolved datadir: " + GetDataDir().string());
-    
+
     // ------------------------------------------------------------
     // EvoDB + deterministic MN manager
     // ------------------------------------------------------------

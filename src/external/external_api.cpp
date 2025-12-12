@@ -94,19 +94,16 @@ extern "C" {
 
     PIVX_EXTERNAL_API const char* pivx_external_mn()
     {
-        Flow::Clear();
         return pivx_external_mn_step();
     }
 
     PIVX_EXTERNAL_API const char* pivx_external_pos()
     {
-        Flow::Clear();
         return pivx_external_pos_step();
     }
 
     PIVX_EXTERNAL_API const char* pivx_external_shield()
     {
-        Flow::Clear();
         return pivx_external_shield_step();
     }
 } // extern "C"

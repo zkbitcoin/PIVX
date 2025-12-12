@@ -112,8 +112,6 @@ static uint256 GetKernelHash(const CBlock& block,
 extern "C"
 const char* pivx_external_pos_step()
 {
-    Flow::Clear();
-
     Flow::Step({
         FlowScope::EXEC,
         FlowDomain::POS,

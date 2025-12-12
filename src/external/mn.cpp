@@ -189,9 +189,6 @@ static std::string mn_to_json(
 extern "C"
 const char* pivx_external_mn_step(void)
 {
-    // Clear previous EXEC flow only (INIT / ENV remain)
-    Flow::Clear();
-
     Flow::Step({
         FlowScope::EXEC,
         FlowDomain::MN,
