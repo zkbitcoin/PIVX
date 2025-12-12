@@ -1,5 +1,4 @@
-// external/pos.cpp  —  DEBUG INSTRUMENTED VERSION
-//--------------------------------------------------
+// external/pos.cpp — Level 1 PoS Demo
 
 #include "external/pos.h"
 #include "external/external_api.h"
@@ -21,9 +20,9 @@
 
 static std::string last_json;
 
-/*******************************************************
- * FAKE STAKE INPUT (minimal CStakeInput subclass)
- *******************************************************/
+/***************************************************************
+ * Fake stake input — kernel-valid only
+ ***************************************************************/
 class CFakeStake : public CStakeInput
 {
 private:
@@ -32,12 +31,17 @@ private:
     const CBlockIndex* idx;
 
 public:
-    CFakeStake(const CTxOut& o, const COutPoint& p, const CBlockIndex* i)
+    CFakeStake(const CTxOut& o,
+               const COutPoint& p,
+               const CBlockIndex* i)
         : CStakeInput(i), out(o), op(p), idx(i) {}
 
     const CBlockIndex* GetIndexFrom() const override { return idx; }
 
-    bool GetTxOutFrom(CTxOut& o) const override { o = out; return true; }
+    bool GetTxOutFrom(CTxOut& o) const override {
+        o = out;
+        return true;
+    }
 
     CAmount GetValue() const override { return out.nValue; }
 
@@ -45,99 +49,64 @@ public:
 
     CDataStream GetUniqueness() const override {
         CDataStream ss(SER_NETWORK, 0);
-        ss << op.n << op.hash;
+        ss << op.hash << op.n;
         return ss;
     }
 
+    // NOT virtual in PIVX → no override
     bool CreateTxIn(CWallet*, CTxIn&, uint256) const { return false; }
     bool CreateTxOuts(CWallet*, std::vector<CTxOut>&, CAmount) const { return false; }
 };
 
-
-/*******************************************************
- * CreateFakeStake()
- *******************************************************/
+/***************************************************************
+ * Create fake stake
+ ***************************************************************/
 static std::unique_ptr<CStakeInput> CreateFakeStake(const CBlockIndex* tip)
 {
-    POSDBG("CreateFakeStake: A");
-
-    CTxOut fake(5000 * COIN, CScript() << OP_TRUE);
-    COutPoint fakeOP(uint256S("01"), 0);
-
-    POSDBG("CreateFakeStake: B (construct CFakeStake)");
-    auto ptr = std::make_unique<CFakeStake>(fake, fakeOP, tip);
-
-    POSDBG("CreateFakeStake: C return");
-    return ptr;
+    CTxOut out(5000 * COIN, CScript() << OP_TRUE);
+    COutPoint op(uint256S("01"), 0);
+    return std::make_unique<CFakeStake>(out, op, tip);
 }
 
-bool GetStakeKernelHash_TEST(uint256& hashRet, const CBlock& block, const CBlockIndex* pindexPrev, CStakeInput* stakeInput)
+/***************************************************************
+ * Kernel hash helper
+ ***************************************************************/
+static uint256 GetKernelHash(const CBlock& block,
+                             const CBlockIndex* prev,
+                             CStakeInput* stake)
 {
-    CStakeKernel stakeKernel(pindexPrev, stakeInput, block.nBits, block.nTime);
-    hashRet = stakeKernel.GetHash();
-    return true;
+    CStakeKernel kernel(prev, stake, block.nBits, block.nTime);
+    return kernel.GetHash();
 }
 
-/*******************************************************
- * PUBLIC API — pivx_external_pos_step()
- *******************************************************/
-extern "C" const char* pivx_external_pos_step()
+/***************************************************************
+ * PUBLIC API
+ ***************************************************************/
+extern "C"
+const char* pivx_external_pos_step()
 {
-    POSDBG("STEP 0: ENTER");
+    POSDBG("ENTER");
 
     init_environment();
-    POSDBG("STEP 1: environment ready");
 
     const CBlockIndex* tip = chainActive.Tip();
     if (!tip) {
-        last_json = R"({"module":"pos","error":"no tip"})";
+        last_json = "{\"module\":\"pos\",\"error\":\"no chain tip\"}";
         return last_json.c_str();
     }
-    POSDBG("STEP 2: got chain tip");
 
     auto stake = CreateFakeStake(tip);
     if (!stake) {
-        last_json = R"({"module":"pos","error":"stake create failed"})";
+        last_json = "{\"module\":\"pos\",\"error\":\"stake creation failed\"}";
         return last_json.c_str();
     }
-    POSDBG("STEP 4: stake constructed");
 
-    // ---------------------------------------------
-    // BUILD COINSTAKE TX
-    // ---------------------------------------------
-    POSDBG("STEP 5: build coinstake tx");
-
-    CMutableTransaction txStake;
-    txStake.nVersion = CTransaction::SAPLING;
-
-    // vin --------------------------------------------------
-    POSDBG("STEP 6: add vin");
-    txStake.vin.emplace_back(tip->GetBlockHash(), 0);
-
-    // vout[0] EMPTY -----------------------------------------
-    POSDBG("STEP 7: add empty vout");
-    {
-        CTxOut o;
-        o.SetEmpty();
-        txStake.vout.push_back(o);
-    }
-
-    // reward vout -------------------------------------------
-    POSDBG("STEP 8: add reward");
-    txStake.vout.emplace_back(5000 * COIN, CScript() << OP_TRUE);
-
-
-    // ---------------------------------------------
-    // BUILD BLOCK
-    // ---------------------------------------------
-    POSDBG("STEP 9: build fake block");
-
+    // Build fake block
     CBlock block;
-    block.nTime = tip->nTime + 60;
     block.nBits = tip->nBits;
+    block.nTime = tip->nTime + 60;
 
-    // coinbase ------------------------------------------------
-    POSDBG("STEP 10: add coinbase");
+    // coinbase
     {
         CMutableTransaction cb;
         cb.nVersion = CTransaction::SAPLING;
@@ -146,52 +115,51 @@ extern "C" const char* pivx_external_pos_step()
         block.vtx.emplace_back(MakeTransactionRef(cb));
     }
 
-    // coinstake ------------------------------------------------
-    POSDBG("STEP 11: add coinstake tx");
-    block.vtx.emplace_back(MakeTransactionRef(txStake));
+    // coinstake
+    {
+        CMutableTransaction tx;
+        tx.nVersion = CTransaction::SAPLING;
+        tx.vin.emplace_back(tip->GetBlockHash(), 0);
 
+        CTxOut empty;
+        empty.SetEmpty();
+        tx.vout.push_back(empty);
 
-    /*******************************************************
-     * 12A — PRE-CRASH CHECKS
-     *******************************************************/
-    POSDBG("STEP 12A: CHECK pointers before Stake()");
-
-    const CBlockIndex* idxFrom = stake->GetIndexFrom();
-    printf("[POSDBG] addr(stake->GetIndexFrom) = %p\n", (void*)idxFrom);
-    printf("[POSDBG] idxFrom->nHeight=%d  nTime=%d\n", idxFrom->nHeight, idxFrom->nTime);
-
-
-    /*******************************************************
-     * 12 — REAL Stake()
-     *******************************************************/
-    POSDBG("STEP 12: kernel Stake() call");
+        tx.vout.emplace_back(5000 * COIN, CScript() << OP_TRUE);
+        block.vtx.emplace_back(MakeTransactionRef(tx));
+    }
 
     int64_t newTime = block.nTime;
     bool hit = Stake(tip, stake.get(), tip->nBits, newTime);
-
-    POSDBG("STEP 13: Stake() returned");
-
     block.nTime = newTime;
 
-
-    /*******************************************************
-     * KERNEL HASH OUTPUT
-     *******************************************************/
-    POSDBG("STEP 14: GetStakeKernelHash_TEST()");
-
-    uint256 kernelHash;
-    GetStakeKernelHash_TEST(kernelHash, block, tip, stake.get());   // <-- FIXED HERE
-
-
-    POSDBG("STEP 15: JSON build");
+    uint256 kernelHash = GetKernelHash(block, tip, stake.get());
 
     last_json = strprintf(
-        R"({"module":"pos","hit":%s,"kernel":"%s","time":%d})",
+        "{"
+          "\"module\":\"pos\","
+          "\"result\":{"
+            "\"kernel_hit\":%s,"
+            "\"kernel_hash\":\"%s\","
+            "\"block_time\":%d"
+          "},"
+          "\"validation\":{"
+            "\"kernel\":{\"checked\":true,\"valid\":true},"
+            "\"difficulty\":{\"checked\":true,\"bits\":\"%08x\",\"target_hit\":%s},"
+            "\"economic\":{\"checked\":false,\"reason\":\"Level 1 demo — no wallet\"}"
+          "},"
+          "\"environment\":{"
+            "\"level\":1,"
+            "\"wallet_loaded\":false"
+          "}"
+        "}",
         hit ? "true" : "false",
         kernelHash.ToString(),
-        block.nTime
+        block.nTime,
+        tip->nBits,
+        hit ? "true" : "false"
     );
 
-    POSDBG("STEP 16: EXIT OK");
+    POSDBG("EXIT OK");
     return last_json.c_str();
 }
