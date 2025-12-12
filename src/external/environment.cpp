@@ -208,8 +208,21 @@ void init_environment()
     });
 
     SelectParams(CBaseChainParams::REGTEST);
-    gArgs.SoftSetArg("-datadir", "/tmp/pivx_mock_env");
 
+    // ------------------------------------------------------------
+    // Force datadir resolution BEFORE EvoDB
+    // ------------------------------------------------------------
+    const std::string datadir = "/tmp/pivx_mock_env";
+    fs::create_directories(datadir);
+
+    // IMPORTANT: set BEFORE GetDataDir() is used
+    gArgs.ForceSetArg("-datadir", datadir);
+
+    // Forces internal path caching
+    GetDataDir(true);
+
+    LOG_INFO("ENV", "Resolved datadir: " + GetDataDir().string());
+    
     // ------------------------------------------------------------
     // EvoDB + deterministic MN manager
     // ------------------------------------------------------------
