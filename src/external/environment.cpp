@@ -5,10 +5,16 @@
 // - Sets chain params (REGTEST)
 // - Creates fake chainActive tip
 // - Sets up EvoDB + deterministicMNManager
+//
+// Emits FLOW steps in INIT / ENV scope shared by:
+//   • Masternode
+//   • Proof-of-Stake
+//   • Shielded (Sapling)
 // ============================================================================
 
 #include "environment.h"
 #include "external/logger.h"
+#include "external/flow.h"
 
 #include "chainparams.h"
 #include "chain.h"
@@ -44,6 +50,15 @@ static CBlockIndex* g_genesis = nullptr;
 // ============================================================================
 static void mock_blockindex()
 {
+    Flow::Step({
+        FlowScope::ENV,
+        FlowDomain::SHARED,
+        "ENV_CHAIN_INIT",
+        "Initialize mock blockchain",
+        "Create synthetic block index and chainActive tip",
+        "external/environment.cpp"
+    });
+
     LOG_INFO("ENV", "Creating mock blockchain");
 
     if (g_genesis) {
@@ -54,7 +69,14 @@ static void mock_blockindex()
     // ------------------------------------------------------------
     // Fake previous block
     // ------------------------------------------------------------
-    LOG_INFO("ENV", "Creating synthetic previous block");
+    Flow::Step({
+        FlowScope::ENV,
+        FlowDomain::SHARED,
+        "ENV_PREV_BLOCK",
+        "Create previous block",
+        "Create synthetic previous block for mock chain",
+        "chain.h"
+    });
 
     CBlockIndex* prev = new CBlockIndex();
     prev->nHeight = -1;
@@ -74,7 +96,14 @@ static void mock_blockindex()
     // ------------------------------------------------------------
     // Fake genesis block
     // ------------------------------------------------------------
-    LOG_INFO("ENV", "Creating synthetic genesis block");
+    Flow::Step({
+        FlowScope::ENV,
+        FlowDomain::SHARED,
+        "ENV_GENESIS_BLOCK",
+        "Create genesis block",
+        "Create synthetic genesis block for mock chain",
+        "chain.h"
+    });
 
     g_genesis = new CBlockIndex();
     g_genesis->nHeight = 0;
@@ -102,6 +131,15 @@ static void mock_blockindex()
 // ============================================================================
 static void mock_sporks()
 {
+    Flow::Step({
+        FlowScope::ENV,
+        FlowDomain::SHARED,
+        "ENV_SPORKS_DISABLED",
+        "Disable sporks",
+        "Spork subsystem disabled in demo environment",
+        "spork.h"
+    });
+
     LOG_WARN("ENV", "Sporks are disabled (demo environment)");
 }
 
@@ -110,6 +148,15 @@ static void mock_sporks()
 // ============================================================================
 static void mock_mn()
 {
+    Flow::Step({
+        FlowScope::ENV,
+        FlowDomain::SHARED,
+        "ENV_MN_MOCK",
+        "Mock masternode subsystem",
+        "Masternode networking and wallet disabled",
+        "masternodeman.h"
+    });
+
     LOG_INFO("ENV", "Masternode subsystem mocked (no network / no wallet)");
 }
 
@@ -123,28 +170,57 @@ void init_environment()
         return;
     }
 
-    // Logger should already be initialized by loader or test harness
+    Flow::Step({
+        FlowScope::INIT,
+        FlowDomain::SHARED,
+        "ENV_INIT_START",
+        "Initialize environment",
+        "Begin mock environment initialization",
+        "external/environment.cpp"
+    });
+
     LOG_INFO("ENV", "Initializing mock environment");
 
     // ------------------------------------------------------------
     // ECC INITIALIZATION
     // ------------------------------------------------------------
-    // VERIFY context: handled by static ECCVerifyHandle
-    // SIGN context: MUST be initialized manually
-    LOG_INFO("ENV", "Initializing ECC SIGN context");
+    Flow::Step({
+        FlowScope::INIT,
+        FlowDomain::SHARED,
+        "ENV_ECC_INIT",
+        "Initialize ECC",
+        "Initialize secp256k1 VERIFY and SIGN contexts",
+        "key.h"
+    });
+
     ECC_Start();
 
     // ------------------------------------------------------------
     // Chain parameters
     // ------------------------------------------------------------
-    LOG_INFO("ENV", "Selecting REGTEST chain parameters");
+    Flow::Step({
+        FlowScope::INIT,
+        FlowDomain::SHARED,
+        "ENV_CHAIN_PARAMS",
+        "Select REGTEST params",
+        "Select REGTEST chain parameters",
+        "chainparams.h"
+    });
+
     SelectParams(CBaseChainParams::REGTEST);
     gArgs.SoftSetArg("-datadir", "/tmp/pivx_mock_env");
 
     // ------------------------------------------------------------
     // EvoDB + deterministic MN manager
     // ------------------------------------------------------------
-    LOG_INFO("ENV", "Initializing EvoDB and deterministic MN manager");
+    Flow::Step({
+        FlowScope::INIT,
+        FlowDomain::SHARED,
+        "ENV_EVODB_INIT",
+        "Initialize EvoDB",
+        "Initialize EvoDB and deterministic masternode manager",
+        "evo/evodb.h"
+    });
 
     g_evoDb = std::make_unique<CEvoDB>(1 << 20); // 1 MB cache
     deterministicMNManager = std::make_unique<CDeterministicMNManager>(*g_evoDb);
@@ -157,6 +233,16 @@ void init_environment()
     mock_mn();
 
     g_env_ready = true;
+
+    Flow::Step({
+        FlowScope::INIT,
+        FlowDomain::SHARED,
+        "ENV_INIT_DONE",
+        "Environment ready",
+        "Mock environment initialization complete",
+        "external/environment.cpp"
+    });
+
     LOG_INFO("ENV", "Environment initialization complete");
 }
 
@@ -170,7 +256,17 @@ void advance_time(int64_t sec)
         return;
     }
 
+    Flow::Step({
+        FlowScope::ENV,
+        FlowDomain::SHARED,
+        "ENV_TIME_ADVANCE",
+        "Advance mock time",
+        "Advance mock chain time",
+        "chain.h"
+    });
+
     g_genesis->nTime += sec;
+
     LOG_INFO("ENV", "Advanced mock chain time by " + std::to_string(sec) + " seconds");
 }
 
@@ -182,6 +278,15 @@ static DummyWalletStruct dummyWallet;
 
 CWallet& wallet()
 {
+    Flow::Step({
+        FlowScope::ENV,
+        FlowDomain::SHARED,
+        "ENV_WALLET_STUB",
+        "Access dummy wallet",
+        "Wallet stub accessed (linker-only, no real wallet)",
+        "wallet.h"
+    });
+
     LOG_WARN("ENV", "Dummy wallet accessed (linker stub only)");
     return *(CWallet*)&dummyWallet;
 }

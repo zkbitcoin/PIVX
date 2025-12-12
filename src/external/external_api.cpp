@@ -2,6 +2,7 @@
 #include "external_api.h"
 #include "environment.h"
 #include "logger.h"
+#include "flow.h"
 
 // Direct functions implemented in other files:
 extern "C" const char* pivx_external_mn_step();
@@ -57,6 +58,24 @@ extern "C" {
 
             once = true;
         }
+
+        // ------------------------------------------------------------
+        // FLOW init (semantic execution trace)
+        // ------------------------------------------------------------
+        const char* flowPathEnv = getenv("PIVX_UIX_FLOW_PATH");
+        std::string flowPath = flowPathEnv
+            ? flowPathEnv
+            : "/tmp/pivx-uix.flow";
+
+        const char* flowAppendEnv = getenv("PIVX_UIX_FLOW_APPEND");
+        bool flowAppend = !(flowAppendEnv && std::string(flowAppendEnv) == "0");
+
+        Flow::Init(
+            FlowSink::BOTH,   // MEMORY + FILE
+            flowPath,
+            flowAppend
+        );
+
 
         init_environment();
     }

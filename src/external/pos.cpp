@@ -2,23 +2,13 @@
 // ============================================================================
 // Level 1 Proof-of-Stake Demo (UIX)
 //
-// Demonstrates:
-//  • Stake kernel construction
-//  • Kernel hash computation
-//  • Difficulty / target check
-//
-// DOES NOT demonstrate:
-//  • Wallet ownership
-//  • UTXO maturity
-//  • Economic validation
-//  • Block acceptance / consensus
-//
-// This is a cryptographic + kernel-level demo only.
+// Cryptographic + kernel-level demo only
 // ============================================================================
 
 #include "external/pos.h"
 #include "external/environment.h"
 #include "external/logger.h"
+#include "external/flow.h"
 
 #include "chain.h"
 #include "kernel.h"
@@ -31,6 +21,7 @@
 
 #include <memory>
 #include <string>
+#include <sstream>
 
 // ----------------------------------------------------------------------------
 // ABI-safe return buffer
@@ -61,7 +52,6 @@ public:
     }
 
     CAmount GetValue() const override { return out.nValue; }
-
     bool IsZPIV() const override { return false; }
 
     CDataStream GetUniqueness() const override {
@@ -70,7 +60,6 @@ public:
         return ss;
     }
 
-    // Not virtual in PIVX → intentionally NOT overridden
     bool CreateTxIn(CWallet*, CTxIn&, uint256) const { return false; }
     bool CreateTxOuts(CWallet*, std::vector<CTxOut>&, CAmount) const { return false; }
 };
@@ -80,6 +69,15 @@ public:
  ***************************************************************/
 static std::unique_ptr<CStakeInput> CreateFakeStake(const CBlockIndex* tip)
 {
+    Flow::Step({
+        FlowScope::EXEC,
+        FlowDomain::POS,
+        "POS_STAKE_CREATE",
+        "Create stake input",
+        "Create synthetic stake input valid for kernel hashing",
+        "stakeinput.h"
+    });
+
     LOG_INFO("POS", "Creating synthetic stake input (kernel-valid only)");
 
     CTxOut out(5000 * COIN, CScript() << OP_TRUE);
@@ -95,6 +93,15 @@ static uint256 GetKernelHash(const CBlock& block,
                              const CBlockIndex* prev,
                              CStakeInput* stake)
 {
+    Flow::Step({
+        FlowScope::EXEC,
+        FlowDomain::POS,
+        "POS_KERNEL_HASH",
+        "Compute kernel hash",
+        "Compute stake kernel hash for PoS evaluation",
+        "kernel.h"
+    });
+
     CStakeKernel kernel(prev, stake, block.nBits, block.nTime);
     return kernel.GetHash();
 }
@@ -105,6 +112,17 @@ static uint256 GetKernelHash(const CBlock& block,
 extern "C"
 const char* pivx_external_pos_step()
 {
+    Flow::Clear();
+
+    Flow::Step({
+        FlowScope::EXEC,
+        FlowDomain::POS,
+        "POS_ENTRY",
+        "Start PoS demo",
+        "Entry point for Proof-of-Stake Level 1 demo",
+        "external/pos.cpp"
+    });
+
     LOG_INFO("POS", "Starting Proof-of-Stake Level 1 demo");
 
     init_environment();
@@ -112,21 +130,26 @@ const char* pivx_external_pos_step()
     // ------------------------------------------------------------
     // Chain tip
     // ------------------------------------------------------------
+    Flow::Step({
+        FlowScope::EXEC,
+        FlowDomain::POS,
+        "POS_CHAIN_TIP",
+        "Fetch chain tip",
+        "Obtain current mock chain tip",
+        "chain.h"
+    });
+
     const CBlockIndex* tip = chainActive.Tip();
     if (!tip) {
-        LOG_ERROR("POS", "No chain tip available");
         last_json = "{\"module\":\"pos\",\"error\":\"no chain tip\"}";
         return last_json.c_str();
     }
-
-    LOG_INFO("POS", "Using mock chain tip at height " + std::to_string(tip->nHeight));
 
     // ------------------------------------------------------------
     // Stake input
     // ------------------------------------------------------------
     auto stake = CreateFakeStake(tip);
     if (!stake) {
-        LOG_ERROR("POS", "Stake input creation failed");
         last_json = "{\"module\":\"pos\",\"error\":\"stake creation failed\"}";
         return last_json.c_str();
     }
@@ -134,13 +157,19 @@ const char* pivx_external_pos_step()
     // ------------------------------------------------------------
     // Build synthetic block
     // ------------------------------------------------------------
-    LOG_INFO("POS", "Constructing synthetic PoS block");
+    Flow::Step({
+        FlowScope::EXEC,
+        FlowDomain::POS,
+        "POS_BLOCK_BUILD",
+        "Build synthetic block",
+        "Construct synthetic PoS block with coinbase and coinstake",
+        "primitives/block.h"
+    });
 
     CBlock block;
     block.nBits = tip->nBits;
     block.nTime = tip->nTime + 60;
 
-    // coinbase (required but meaningless for PoS demo)
     {
         CMutableTransaction cb;
         cb.nVersion = CTransaction::SAPLING;
@@ -149,7 +178,6 @@ const char* pivx_external_pos_step()
         block.vtx.emplace_back(MakeTransactionRef(cb));
     }
 
-    // coinstake
     {
         CMutableTransaction tx;
         tx.nVersion = CTransaction::SAPLING;
@@ -158,15 +186,22 @@ const char* pivx_external_pos_step()
         CTxOut empty;
         empty.SetEmpty();
         tx.vout.push_back(empty);
-
         tx.vout.emplace_back(5000 * COIN, CScript() << OP_TRUE);
+
         block.vtx.emplace_back(MakeTransactionRef(tx));
     }
 
     // ------------------------------------------------------------
-    // Stake kernel evaluation
+    // Kernel evaluation
     // ------------------------------------------------------------
-    LOG_INFO("POS", "Evaluating stake kernel against difficulty target");
+    Flow::Step({
+        FlowScope::EXEC,
+        FlowDomain::POS,
+        "POS_KERNEL_EVAL",
+        "Evaluate kernel",
+        "Evaluate stake kernel against difficulty target",
+        "kernel.h"
+    });
 
     int64_t newTime = block.nTime;
     bool hit = Stake(tip, stake.get(), tip->nBits, newTime);
@@ -174,46 +209,45 @@ const char* pivx_external_pos_step()
 
     uint256 kernelHash = GetKernelHash(block, tip, stake.get());
 
-    LOG_INFO(
-        "POS",
-        std::string("Kernel evaluation complete — target ")
-        + (hit ? "HIT" : "MISSED")
-    );
-
     // ------------------------------------------------------------
     // JSON output
     // ------------------------------------------------------------
-    last_json = strprintf(
-        "{"
-          "\"module\":\"pos\","
-          "\"result\":{"
-            "\"kernel_hit\":%s,"
-            "\"kernel_hash\":\"%s\","
-            "\"block_time\":%d"
-          "},"
-          "\"validation\":{"
-            "\"kernel\":{\"checked\":true,\"valid\":true},"
-            "\"difficulty\":{"
-                "\"checked\":true,"
-                "\"bits\":\"%08x\","
-                "\"target_hit\":%s"
-            "},"
-            "\"economic\":{"
-                "\"checked\":false,"
-                "\"reason\":\"Level 1 demo — no wallet or UTXO ownership\""
-            "}"
-          "},"
-          "\"environment\":{"
-            "\"level\":1,"
-            "\"wallet_loaded\":false"
-          "}"
-        "}",
-        hit ? "true" : "false",
-        kernelHash.ToString(),
-        block.nTime,
-        tip->nBits,
-        hit ? "true" : "false"
-    );
+    std::ostringstream o;
+    o << "{"
+      << "\"module\":\"pos\","
+      << "\"result\":{"
+      << "\"kernel_hit\":" << (hit ? "true" : "false") << ","
+      << "\"kernel_hash\":\"" << kernelHash.ToString() << "\","
+      << "\"block_time\":" << block.nTime
+      << "},"
+      << "\"validation\":{"
+      << "\"kernel\":{\"checked\":true,\"valid\":true},"
+      << "\"difficulty\":{"
+      << "\"checked\":true,"
+      << "\"bits\":\"" << strprintf("%08x", tip->nBits) << "\","
+      << "\"target_hit\":" << (hit ? "true" : "false")
+      << "},"
+      << "\"economic\":{"
+      << "\"checked\":false,"
+      << "\"reason\":\"Level 1 demo — no wallet or UTXO ownership\""
+      << "}"
+      << "},"
+      << "\"environment\":{"
+      << "\"level\":1,"
+      << "\"wallet_loaded\":false"
+      << "}"
+      << "}";
+
+    last_json = o.str();
+
+    Flow::Step({
+        FlowScope::EXEC,
+        FlowDomain::POS,
+        "POS_EXIT",
+        "Return result",
+        "Return PoS kernel evaluation result to UIX",
+        "external/pos.cpp"
+    });
 
     LOG_INFO("POS", "Proof-of-Stake Level 1 demo complete");
 
