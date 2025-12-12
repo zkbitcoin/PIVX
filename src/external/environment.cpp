@@ -1,3 +1,12 @@
+// external/environment.cpp
+// ============================================================================
+// Minimal mock environment for UIX demos
+// - Initializes BOTH ECC contexts (VERIFY + SIGN)
+// - Sets chain params (REGTEST)
+// - Creates fake chainActive tip
+// - Sets up EvoDB + deterministicMNManager
+// ============================================================================
+
 #include "environment.h"
 
 #include "chainparams.h"
@@ -9,10 +18,18 @@
 #include "evo/deterministicmns.h"
 #include "validation.h"
 
+#include "pubkey.h"   // ECCVerifyHandle
+#include "key.h"      // ECC_Start / ECC_Stop
+
 #include <memory>
 #include <cstdio>
 
 #define ENVDBG(x) printf("[ENVDBG] %s\n", x)
+
+// ============================================================================
+// ECC (VERIFY context must be static lifetime)
+// ============================================================================
+static ECCVerifyHandle g_verify_handle;
 
 // ============================================================================
 // GLOBALS
@@ -24,14 +41,17 @@ extern std::unique_ptr<CDeterministicMNManager> deterministicMNManager;
 
 static CBlockIndex* g_genesis = nullptr;
 
+// ============================================================================
+// MOCK BLOCKCHAIN
+// ============================================================================
 static void mock_blockindex()
 {
     ENVDBG("mock_blockindex: enter");
     if (g_genesis) return;
 
-    //
-    // Create block -1 (fake previous)
-    //
+    // ------------------------------------------------------------
+    // Fake previous block
+    // ------------------------------------------------------------
     CBlockIndex* prev = new CBlockIndex();
     prev->nHeight = -1;
     prev->nTime   = GetTime() - 200;
@@ -44,12 +64,12 @@ static void mock_blockindex()
     static uint256 prevHash = uint256S(
         "00000000000000000000000000000000000000000000000000000000000000"
     );
-    prev->phashBlock = &prevHash;          // *** CRITICAL FIX ***
+    prev->phashBlock = &prevHash;
     mapBlockIndex[prevHash] = prev;
 
-    //
-    // Create genesis block
-    //
+    // ------------------------------------------------------------
+    // Fake genesis block
+    // ------------------------------------------------------------
     g_genesis = new CBlockIndex();
     g_genesis->nHeight = 0;
     g_genesis->nTime   = GetTime() - 100;
@@ -62,7 +82,7 @@ static void mock_blockindex()
     static uint256 ghash = uint256S(
         "00000000000000000000000000000000000000000000000000000000000001"
     );
-    g_genesis->phashBlock = &ghash;         // *** CRITICAL FIX ***
+    g_genesis->phashBlock = &ghash;
     mapBlockIndex[ghash] = g_genesis;
 
     chainActive.SetTip(g_genesis);
@@ -70,8 +90,6 @@ static void mock_blockindex()
 
     ENVDBG("mock_blockindex: done");
 }
-
-
 
 // ============================================================================
 // SPORK MOCK (no-op)
@@ -90,7 +108,7 @@ static void mock_mn()
 }
 
 // ============================================================================
-// INIT ENVIRONMENT
+// INIT ENVIRONMENT (IDEMPOTENT, SAFE)
 // ============================================================================
 void init_environment()
 {
@@ -98,12 +116,17 @@ void init_environment()
 
     ENVDBG("init_environment: ENTER");
 
+    // ------------------------------------------------------------
+    // 🔑 ECC INITIALIZATION (THIS WAS THE MISSING PIECE)
+    // ------------------------------------------------------------
+    // VERIFY context: handled by static ECCVerifyHandle above
+    // SIGN context: MUST be initialized manually
+    ECC_Start();
+
     SelectParams(CBaseChainParams::REGTEST);
     gArgs.SoftSetArg("-datadir", "/tmp/pivx_mock_env");
 
-    // CEvoDB requires only cache size, NOT a path
-    g_evoDb = std::make_unique<CEvoDB>(1 << 20);  // 1 MB cache
-
+    g_evoDb = std::make_unique<CEvoDB>(1 << 20); // 1 MB cache
     deterministicMNManager = std::make_unique<CDeterministicMNManager>(*g_evoDb);
 
     mock_blockindex();
@@ -115,7 +138,7 @@ void init_environment()
 }
 
 // ============================================================================
-// ADVANCE TIME
+// ADVANCE TIME (OPTIONAL)
 // ============================================================================
 void advance_time(int64_t sec)
 {
@@ -123,13 +146,13 @@ void advance_time(int64_t sec)
 }
 
 // ============================================================================
-// DUMMY WALLET STUB (no real wallet)
+// DUMMY WALLET STUB (LINKER ONLY)
 // ============================================================================
 struct DummyWalletStruct { int unused = 0; };
 static DummyWalletStruct dummyWallet;
 
 CWallet& wallet()
 {
-    // NEVER used — only exists to satisfy linker
+    // Never used — satisfies linker only
     return *(CWallet*)&dummyWallet;
 }

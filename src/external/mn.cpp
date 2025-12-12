@@ -1,163 +1,157 @@
 // external/mn.cpp
+// ============================================================================
+// Stateless Masternode Demo (UIX)
+// Each call generates a NEW masternode with fresh keys,
+// signs a real ping, injects it into mnodeman,
+// and returns a JSON snapshot.
+// ============================================================================
+
 #include "external/mn.h"
+#include "external/environment.h"
 
 #include "masternodeman.h"
 #include "masternode.h"
 #include "netbase.h"
 #include "timedata.h"
 #include "util/system.h"
+#include "chain.h"
+#include "validation.h"
+#include "key.h"
+#include "key_io.h"
+#include "base58.h"
 
 #include <string>
 #include <sstream>
 #include <cstdio>
 
-//
-// Debug macro
-//
 #define MNDBG(x) printf("[MNDBG] %s\n", x)
 
-//
-// Hold last JSON string
-//
+// ----------------------------------------------------------------------------
+// ABI-safe return buffer
+// ----------------------------------------------------------------------------
 static std::string g_last;
-static const char* ret(const std::string& s) {
+static const char* ret(const std::string& s)
+{
     g_last = s;
     return g_last.c_str();
 }
 
-//
-// Only inject once
-//
-static bool g_injected = false;
-
-//
-// Convert CMasternode → JSON
-//
-static std::string mn_to_json(const CMasternode& mn)
+// ----------------------------------------------------------------------------
+// Stateless demo → clear MN list every run
+// ----------------------------------------------------------------------------
+static void reset_demo_state()
 {
-    MNDBG("mn_to_json: ENTER");
+    MNDBG("reset_demo_state");
+    mnodeman.Clear();
+}
 
+// ----------------------------------------------------------------------------
+// Generate real ECDSA keys (ECC already initialized)
+// ----------------------------------------------------------------------------
+static void generate_keys(
+    CKey& mnKey,
+    CPubKey& mnPubKey,
+    CKey& collateralKey,
+    CPubKey& collateralPubKey
+)
+{
+    MNDBG("generate_keys");
+
+    mnKey.MakeNewKey(true);
+    mnPubKey = mnKey.GetPubKey();
+
+    collateralKey.MakeNewKey(true);
+    collateralPubKey = collateralKey.GetPubKey();
+}
+
+// ----------------------------------------------------------------------------
+// Create, sign, and add masternode (demo economics)
+// ----------------------------------------------------------------------------
+static CMasternode create_and_add_mn(
+    const CKey& mnKey,
+    const CPubKey& mnPubKey
+)
+{
+    MNDBG("create_and_add_mn");
+
+    COutPoint collateral(uint256S("01"), 0);
+
+    CMasternode mn;
+    mn.vin = CTxIn(collateral);
+    mn.protocolVersion = PROTOCOL_VERSION;
+    mn.sigTime = GetAdjustedTime();
+    mn.addr = LookupNumeric("127.0.0.1", 51472);
+
+    CMasternodePing ping(
+        mn.vin,
+        chainActive.Tip()->GetBlockHash(),
+        GetAdjustedTime()
+    );
+
+    ping.Sign(mnKey, mnPubKey.GetID());
+    mn.SetLastPing(ping);
+
+    mnodeman.Add(mn);
+    return mn;
+}
+
+// ----------------------------------------------------------------------------
+// Build UIX JSON snapshot
+// ----------------------------------------------------------------------------
+static std::string mn_to_json(
+    const CMasternode& mn,
+    const CPubKey& mnPubKey,
+    const CPubKey& collateralPubKey,
+    const CKey& mnKey,
+    const CKey& collateralKey
+)
+{
     std::ostringstream o;
     o << "{";
+
     o << "\"vin\":\"" << mn.vin.ToString() << "\",";
     o << "\"addr\":\"" << mn.addr.ToString() << "\",";
     o << "\"protocol_version\":" << mn.protocolVersion << ",";
     o << "\"sig_time\":" << mn.sigTime << ",";
     o << "\"status\":\"" << mn.Status() << "\",";
-    o << "\"last_ping\":{";
-    o << "\"blockhash\":\"" << mn.lastPing.blockHash.ToString() << "\",";
-    o << "\"sigtime\":" << mn.lastPing.sigTime;
-    o << "}";
+
+    o << "\"keys\":{";
+    o << "\"masternode_pubkey\":\"" << HexStr(mnPubKey) << "\",";
+    o << "\"collateral_pubkey\":\"" << HexStr(collateralPubKey) << "\"";
+    o << "},";
+
+    o << "\"demo_private_keys\":{";
+    o << "\"masternode_privkey\":\"" << KeyIO::EncodeSecret(mnKey) << "\",";
+    o << "\"collateral_privkey\":\"" << KeyIO::EncodeSecret(collateralKey) << "\"";
     o << "}";
 
-    MNDBG("mn_to_json: EXIT");
+    o << "}";
     return o.str();
 }
 
-//
-// SAFELY inject a real legacy-style MN into mnodeman
-//
-static void inject_fake_masternode()
-{
-    MNDBG("inject_fake_masternode: ENTER");
-
-    if (g_injected) {
-        MNDBG("inject_fake_masternode: already injected");
-        return;
-    }
-
-    g_injected = true;
-
-    //
-    // 1. Create fake collateral
-    //
-    MNDBG("creating fake COutPoint");
-    COutPoint collateral(uint256S("01"), 0);
-
-    //
-    // 2. Construct CMasternode object
-    //
-    MNDBG("constructing CMasternode");
-    CMasternode mn;
-    mn.vin = CTxIn(collateral);
-    mn.protocolVersion = PROTOCOL_VERSION;
-    mn.sigTime = GetAdjustedTime();
-
-    //
-    // 3. Address (legacy masternodes require service port)
-    //
-    MNDBG("creating service via LookupNumeric()");
-    CService service = LookupNumeric("127.0.0.1", 51472);
-    mn.addr = service;
-
-    MNDBG("service OK");
-
-    //
-    // 4. Construct a valid ping
-    //
-    MNDBG("constructing ping object");
-    CMasternodePing ping(
-        mn.vin,
-        uint256S("02"),       // fake blockhash
-        GetAdjustedTime()
-    );
-
-    MNDBG("setting ping");
-    mn.SetLastPing(ping);
-
-    //
-    // 5. Actually ADD TO MN MAN
-    //
-    MNDBG("adding MN via mnodeman.Add()");
-    bool ok = mnodeman.Add(mn);
-
-    if (!ok)
-        MNDBG("mnodeman.Add() returned FALSE");
-    else
-        MNDBG("mnodeman.Add() succeeded");
-
-    MNDBG("inject_fake_masternode: EXIT");
-}
-
-//
-// Public external step API
-//
+// ----------------------------------------------------------------------------
+// Public UIX entry point
+// ----------------------------------------------------------------------------
 extern "C"
 const char* pivx_external_mn_step(void)
 {
     MNDBG("pivx_external_mn_step: ENTER");
 
-    //
-    // Inject MN if needed
-    //
-    inject_fake_masternode();
+    init_environment();
+    reset_demo_state();
 
-    //
-    // Copy the current list (safe accessor)
-    //
-    MNDBG("copying MN list...");
-    std::map<COutPoint, MasternodeRef> list = mnodeman.Copy();
+    CKey mnKey, collateralKey;
+    CPubKey mnPubKey, collateralPubKey;
 
-    if (list.empty()) {
-        MNDBG("MN list is EMPTY");
-        return ret("{\"error\":\"no masternodes present\"}");
-    }
-
-    MNDBG("MN list non-empty, extracting first entry");
-
-    const auto& pair = *list.begin();
-    const MasternodeRef& ref = pair.second;
-
-    if (!ref) {
-        MNDBG("ERROR: MasternodeRef is null");
-        return ret("{\"error\":\"null masternode ref\"}");
-    }
-
-    MNDBG("building JSON...");
-
-    const CMasternode& mn = *ref;
-    std::string json = mn_to_json(mn);
+    generate_keys(mnKey, mnPubKey, collateralKey, collateralPubKey);
+    CMasternode mn = create_and_add_mn(mnKey, mnPubKey);
 
     MNDBG("pivx_external_mn_step: EXIT");
-    return ret(json);
+    return ret(mn_to_json(
+        mn,
+        mnPubKey,
+        collateralPubKey,
+        mnKey,
+        collateralKey
+    ));
 }
