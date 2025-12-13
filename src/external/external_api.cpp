@@ -15,6 +15,8 @@ extern "C" const char* pivx_external_shield_step();
 
 extern "C" {
 
+    __attribute__((visibility("default")))
+
     PIVX_EXTERNAL_API void pivx_external_init()
     {
         static bool once = false;

@@ -106,7 +106,12 @@ EXTRA_LIBRARIES += \
   $(LIBBITCOIN_ZMQ) \
   $(LIBSAPLING)
 
-lib_LTLIBRARIES = $(LIBBITCOINCONSENSUS)
+# External UIX shared library
+LIBPIVX_EXTERNAL = libpivx_external.la
+
+lib_LTLIBRARIES = \
+  $(LIBBITCOINCONSENSUS) \
+  $(LIBPIVX_EXTERNAL)
 
 bin_PROGRAMS =
 noinst_PROGRAMS =
@@ -351,8 +356,9 @@ obj/build.h: FORCE
 libbitcoin_util_a-clientversion.$(OBJEXT): obj/build.h
 
 # server: shared between pivxd and pivx-qt
+# PIC_FLAGS added for shared library support
 libbitcoin_server_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(MINIUPNPC_CPPFLAGS) $(NATPMP_CPPFLAGS) $(EVENT_CFLAGS) $(EVENT_PTHREADS_CFLAGS)
-libbitcoin_server_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libbitcoin_server_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) $(PIC_FLAGS)
 libbitcoin_server_a_SOURCES = \
   addrdb.cpp \
   addrman.cpp \
@@ -432,8 +438,9 @@ libbitcoin_server_a_SOURCES = \
   $(LIBSAPLING_H)
 
 if ENABLE_ZMQ
+# PIC_FLAGS added for shared library support
 libbitcoin_zmq_a_CPPFLAGS = $(BITCOIN_INCLUDES) $(ZMQ_CFLAGS)
-libbitcoin_zmq_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libbitcoin_zmq_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) $(PIC_FLAGS)
 libbitcoin_zmq_a_SOURCES = \
   zmq/zmqabstractnotifier.cpp \
   zmq/zmqnotificationinterface.cpp \
@@ -442,8 +449,9 @@ endif
 
 # wallet: shared between pivxd and pivx-qt, but only linked
 # when wallet enabled
+# PIC_FLAGS added for shared library support
 libbitcoin_wallet_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-libbitcoin_wallet_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libbitcoin_wallet_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) $(PIC_FLAGS)
 libbitcoin_wallet_a_SOURCES = \
   bip38.cpp \
   interfaces/wallet.cpp \
@@ -468,6 +476,7 @@ libbitcoin_wallet_a_SOURCES = \
   $(LIBSAPLING_H)
 
 # crypto primitives library
+# PIC_FLAGS already present
 crypto_libbitcoin_crypto_a_CPPFLAGS = $(AM_CPPFLAGS) $(PIC_FLAGS)
 crypto_libbitcoin_crypto_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIC_FLAGS)
 crypto_libbitcoin_crypto_a_SOURCES = \
@@ -512,8 +521,9 @@ crypto_libbitcoin_crypto_a_SOURCES = \
   crypto/sph_types.h
 
 # libzerocoin library
+# PIC_FLAGS added for shared library support
 libzerocoin_libbitcoin_zerocoin_a_CPPFLAGS = $(AM_CPPFLAGS) $(BOOST_CPPFLAGS)
-libzerocoin_libbitcoin_zerocoin_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libzerocoin_libbitcoin_zerocoin_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) $(PIC_FLAGS)
 libzerocoin_libbitcoin_zerocoin_a_SOURCES = \
   libzerocoin/bignum.h \
   libzerocoin/Coin.h \
@@ -536,8 +546,9 @@ libzerocoin_libbitcoin_zerocoin_a_SOURCES = \
   zpiv/zpivmodule.cpp
 
 # common: shared between pivxd, and pivx-qt and non-server tools
+# PIC_FLAGS added for shared library support
 libbitcoin_common_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-libbitcoin_common_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libbitcoin_common_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) $(PIC_FLAGS)
 libbitcoin_common_a_SOURCES = \
   activemasternode.cpp \
   base58.cpp \
@@ -594,8 +605,9 @@ libbitcoin_common_a_SOURCES = \
 # util: shared between all executables.
 # This library *must* be included to make sure that the glibc
 # backward-compatibility objects and their sanity checks are linked.
+# PIC_FLAGS added for shared library support
 libbitcoin_util_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-libbitcoin_util_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libbitcoin_util_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) $(PIC_FLAGS)
 libbitcoin_util_a_SOURCES = \
   arith_uint256.cpp \
   chainparamsbase.cpp \
@@ -631,8 +643,9 @@ AM_LDFLAGS += $(COMPAT_LDFLAGS)
 endif
 
 # sapling protocol primitives #
+# PIC_FLAGS already present
 libsapling_a_CPPFLAGS = $(AM_CPPFLAGS) $(PIC_FLAGS) $(BITCOIN_INCLUDES)
-libsapling_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libsapling_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) $(PIC_FLAGS)
 libsapling_a_SOURCES = \
   bech32.cpp \
   sapling/sapling_util.cpp \
@@ -655,8 +668,9 @@ AM_LDFLAGS += $(COMPAT_LDFLAGS)
 endif
 
 # cli: shared between pivx-cli and pivx-qt
+# PIC_FLAGS added for shared library support
 libbitcoin_cli_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-libbitcoin_cli_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+libbitcoin_cli_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) $(PIC_FLAGS)
 libbitcoin_cli_a_SOURCES = \
   rpc/client.cpp \
   $(BITCOIN_CORE_H) \
@@ -667,7 +681,12 @@ nodist_libbitcoin_util_a_SOURCES = $(srcdir)/obj/build.h
 
 # pivxd binary #
 pivxd_SOURCES = \
-  pivxd.cpp \
+  pivxd.cpp
+
+# =============================================================================
+# External UIX shared library
+# =============================================================================
+libpivx_external_la_SOURCES = \
   external/external_api.cpp \
   external/environment.cpp \
   external/mn.cpp \
@@ -675,9 +694,54 @@ pivxd_SOURCES = \
   external/shield.cpp \
   external/logger.cpp \
   external/flow.cpp
+
 pivxd_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 pivxd_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 pivxd_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
+
+# External library compiler flags
+# -include relic_compat.h MUST come first to handle macro conflicts
+libpivx_external_la_CPPFLAGS = \
+  -include $(srcdir)/external/relic_compat.h \
+  $(AM_CPPFLAGS) \
+  $(BITCOIN_INCLUDES)
+libpivx_external_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIC_FLAGS)
+
+# External library linker flags
+# -shared: build as shared library (.so/.dylib)
+# -no-undefined: all symbols must be resolved
+# -avoid-version: don't add version suffix to library name
+# -export-dynamic: export all symbols for dlopen/dlsym access
+libpivx_external_la_LDFLAGS = -shared -no-undefined -avoid-version -export-dynamic
+
+# External library dependencies
+# All static libraries linked in MUST be compiled with PIC_FLAGS
+libpivx_external_la_LIBADD = \
+  $(LIBBITCOIN_SERVER) \
+  $(LIBBITCOIN_WALLET) \
+  $(LIBBITCOIN_COMMON) \
+  $(LIBBITCOIN_UTIL) \
+  $(LIBBITCOIN_ZMQ) \
+  $(LIBBITCOIN_CRYPTO) \
+  $(LIBBITCOIN_ZEROCOIN) \
+  $(LIBSAPLING) \
+  $(LIBSECP256K1) \
+  $(LIBRUSTZCASH) \
+  $(LIBUNIVALUE) \
+  $(LIBLEVELDB) \
+  $(LIBLEVELDB_SSE42) \
+  $(LIBMEMENV) \
+  $(BOOST_LIBS) \
+  $(BDB_LIBS) \
+  $(MINIUPNPC_LIBS) \
+  $(NATPMP_LIBS) \
+  $(EVENT_PTHREADS_LIBS) \
+  $(EVENT_LIBS) \
+  $(ZMQ_LIBS) \
+  $(BLS_LIBS) \
+  $(LIBZCASH_LIBS)
+
+# =============================================================================
 
 if TARGET_WINDOWS
 pivxd_SOURCES += pivxd-res.rc

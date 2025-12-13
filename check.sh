@@ -8,6 +8,8 @@ install_name_tool -add_rpath $HOME/boost/boost_1_84_0/dist/lib src/test/test_piv
 install_name_tool -add_rpath $HOME/boost/boost_1_84_0/dist/lib src/pivx-tx
 install_name_tool -add_rpath $HOME/boost/boost_1_84_0/dist/lib $HOME/git/PIVX/src/pivxd
 
+install_name_tool -add_rpath $HOME/boost/boost_1_84_0/dist/lib $HOME/git/PIVX/src/.libs/libpivx_external.dylib
+
 otool -l src/qt/test/test_pivx-qt | grep -A10 RPATH
 otool -l src/test/test_pivx | grep -A3 RPATH
 otool -l src/pivx-tx | grep -A3 RPATH
