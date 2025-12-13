@@ -154,7 +154,7 @@ static CMasternode create_and_add_mn(
 }
 
 // ----------------------------------------------------------------------------
-// Build JSON snapshot
+// Build JSON snapshot (normalized with POS / SHIELD, incl. validation stub)
 // ----------------------------------------------------------------------------
 static std::string mn_to_json(
     const CMasternode& mn,
@@ -166,22 +166,70 @@ static std::string mn_to_json(
 {
     std::ostringstream o;
     o << "{";
+
+    // --------------------------------------------------------------------
+    // Module discriminator
+    // --------------------------------------------------------------------
+    o << "\"module\":\"mn\",";
+
+    // --------------------------------------------------------------------
+    // Result payload
+    // --------------------------------------------------------------------
+    o << "\"result\":{";
     o << "\"vin\":\"" << mn.vin.ToString() << "\",";
     o << "\"addr\":\"" << mn.addr.ToString() << "\",";
     o << "\"protocol_version\":" << mn.protocolVersion << ",";
     o << "\"sig_time\":" << mn.sigTime << ",";
-    o << "\"status\":\"" << mn.Status() << "\",";
+    o << "\"status\":\"" << mn.Status() << "\"";
+    o << "},";
+
+    // --------------------------------------------------------------------
+    // Validation (stub — symmetry with POS / SHIELD)
+    // --------------------------------------------------------------------
+    o << "\"validation\":{";
+    o << "\"network\":{";
+    o << "\"checked\":false,";
+    o << "\"reason\":\"Stateless demo — no P2P broadcast or quorum validation\"";
+    o << "},";
+    o << "\"economic\":{";
+    o << "\"checked\":false,";
+    o << "\"reason\":\"Stateless demo — no wallet or collateral ownership\"";
+    o << "},";
+    o << "\"governance\":{";
+    o << "\"checked\":false,";
+    o << "\"reason\":\"Governance and payments not evaluated in demo mode\"";
+    o << "}";
+    o << "},";
+
+    // --------------------------------------------------------------------
+    // Public keys
+    // --------------------------------------------------------------------
     o << "\"keys\":{";
     o << "\"masternode_pubkey\":\"" << HexStr(mnPubKey) << "\",";
     o << "\"collateral_pubkey\":\"" << HexStr(collateralPubKey) << "\"";
     o << "},";
+
+    // --------------------------------------------------------------------
+    // Demo private keys (⚠️ demo only)
+    // --------------------------------------------------------------------
     o << "\"demo_private_keys\":{";
     o << "\"masternode_privkey\":\"" << KeyIO::EncodeSecret(mnKey) << "\",";
     o << "\"collateral_privkey\":\"" << KeyIO::EncodeSecret(collateralKey) << "\"";
+    o << "},";
+
+    // --------------------------------------------------------------------
+    // Environment
+    // --------------------------------------------------------------------
+    o << "\"environment\":{";
+    o << "\"level\":1,";
+    o << "\"wallet_loaded\":false";
     o << "}";
+
     o << "}";
     return o.str();
 }
+
+
 
 // ----------------------------------------------------------------------------
 // Public UIX entry point
