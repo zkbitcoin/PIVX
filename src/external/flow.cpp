@@ -45,8 +45,6 @@ void Flow::Shutdown()
     if (m_sink == FlowSink::FILE || m_sink == FlowSink::BOTH) {
         writeJsonFileUnlocked();
     }
-
-    m_initialized = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +54,26 @@ void Flow::Clear()
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_steps.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Reset flow state (memory + file)
+// ---------------------------------------------------------------------------
+void Flow::Reset()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    // Clear in-memory steps
+    m_steps.clear();
+
+    // Truncate JSON file immediately so UI never sees stale flow
+    if (!m_filePath.empty()) {
+        std::ofstream file(m_filePath, std::ios::out | std::ios::trunc);
+        if (file.is_open()) {
+            file << "{\n  \"steps\": []\n}\n";
+            file.close();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

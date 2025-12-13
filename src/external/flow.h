@@ -103,7 +103,21 @@ public:
     static void Step(const FlowStep& step);
 
     static const std::vector<FlowStep>& Steps();
+
+    // Clear in-memory steps (per EXEC run)
     static void Clear();
+
+    // -----------------------------------------------------------------------
+    // Reset flow state (SAFE execution boundary)
+    //
+    // • Clears in-memory steps
+    // • Truncates JSON flow file immediately
+    // • Guarantees UI sees empty flow before first EXEC step
+    //
+    // This is stronger than Clear() and should be used at the start of
+    // each external execution (e.g. pivx_external_init).
+    // -----------------------------------------------------------------------
+    static void Reset();
 
     // Get all steps as JSON string
     static std::string ToJson();

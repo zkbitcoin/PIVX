@@ -20,7 +20,7 @@ extern "C" {
         static bool once = false;
 
         // ============================================================
-        // LOGGER (one-time init)
+        // LOGGER (one-time init, process lifetime)
         // ============================================================
         if (!once) {
             const char* pathEnv = getenv("PIVX_UIX_LOG_PATH");
@@ -46,37 +46,36 @@ extern "C" {
 
             Logger::Init(sink, level, logPath, logAppend);
 
-            LOG_INFO(
-                "INIT",
-                std::string("Logger initialized (")
-                + (logAppend ? "append" : "truncate")
-                + ") sink="
-                + (sink == LogSink::FILE ? "FILE" :
-                   sink == LogSink::CONSOLE ? "MEMORY" : "BOTH")
-                + " path=" + logPath
-            );
+            // ============================================================
+            // FLOW (one-time init, process lifetime)
+            // ============================================================
+            const char* flowPathEnv = getenv("PIVX_UIX_FLOW_PATH");
+            std::string flowPath = flowPathEnv ? flowPathEnv : "/tmp/pivx-uix.flow";
+
+            const char* flowAppendEnv = getenv("PIVX_UIX_FLOW_APPEND");
+            bool flowAppend = !(flowAppendEnv && std::string(flowAppendEnv) == "0");
+
+            FlowSink flowSink = FlowSink::BOTH;
+            if (const char* s = getenv("PIVX_UIX_FLOW_SINK")) {
+                std::string v(s);
+                if (v == "MEMORY") flowSink = FlowSink::MEMORY;
+                else if (v == "FILE") flowSink = FlowSink::FILE;
+                else if (v == "BOTH") flowSink = FlowSink::BOTH;
+            }
+
+            Flow::Init(flowSink, flowPath, flowAppend);
 
             once = true;
         }
 
         // ============================================================
-        // FLOW (per-process, but configurable per run)
+        // PER-REQUEST RESET (truncate if append=false)
         // ============================================================
-        const char* flowPathEnv = getenv("PIVX_UIX_FLOW_PATH");
-        std::string flowPath = flowPathEnv ? flowPathEnv : "/tmp/pivx-uix.flow";
+        Logger::Reset();
+        Flow::Reset();
 
-        const char* flowAppendEnv = getenv("PIVX_UIX_FLOW_APPEND");
-        bool flowAppend = !(flowAppendEnv && std::string(flowAppendEnv) == "0");
-
-        FlowSink flowSink = FlowSink::BOTH;
-        if (const char* s = getenv("PIVX_UIX_FLOW_SINK")) {
-            std::string v(s);
-            if (v == "MEMORY") flowSink = FlowSink::MEMORY;
-            else if (v == "FILE") flowSink = FlowSink::FILE;
-            else if (v == "BOTH") flowSink = FlowSink::BOTH;
-        }
-
-        Flow::Init(flowSink, flowPath, flowAppend);
+        // Log after reset so this is the first line in fresh log
+        LOG_INFO("INIT", "Request started");
 
         // ============================================================
         // Environment (idempotent)
@@ -86,8 +85,9 @@ extern "C" {
 
     PIVX_EXTERNAL_API void pivx_external_shutdown()
     {
-        Flow::Shutdown();
-        Logger::Shutdown();
+        // NO-OP
+        // Flow is process-lifetime.
+        // Per-request cleanup is handled by Flow::Reset()
     }
 
     // ------------------- EXPORTED API -------------------

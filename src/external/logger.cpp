@@ -13,6 +13,8 @@ std::mutex    Logger::m_mutex;
 std::ofstream Logger::m_file;
 LogLevel      Logger::m_level = LogLevel::INFO;
 LogSink       Logger::m_sink  = LogSink::CONSOLE;
+std::string   Logger::m_filePath;
+bool          Logger::m_append = true;
 bool          Logger::m_initialized = false;
 
 // ---------------------------------------------------------------------------
@@ -25,7 +27,7 @@ static std::string PadRight(const std::string& s, size_t width)
 }
 
 // ---------------------------------------------------------------------------
-// Init
+// Init (once per process)
 // ---------------------------------------------------------------------------
 void Logger::Init(LogSink sink,
                   LogLevel level,
@@ -36,8 +38,10 @@ void Logger::Init(LogSink sink,
 
     if (m_initialized) return;
 
-    m_sink  = sink;
-    m_level = level;
+    m_sink     = sink;
+    m_level    = level;
+    m_filePath = filePath;
+    m_append   = append;
 
     if (sink == LogSink::FILE || sink == LogSink::BOTH) {
         std::ios::openmode mode = std::ios::out;
@@ -55,6 +59,34 @@ void Logger::Init(LogSink sink,
     }
 
     m_initialized = true;
+}
+
+// ---------------------------------------------------------------------------
+// Reset (per request - truncate file if append=false)
+// ---------------------------------------------------------------------------
+void Logger::Reset()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    if (!m_initialized) return;
+
+    // Only truncate if append mode is disabled
+    if (m_append) return;
+
+    // Only applies to file-based sinks
+    if (m_sink != LogSink::FILE && m_sink != LogSink::BOTH) return;
+
+    if (m_file.is_open()) {
+        m_file.close();
+    }
+
+    // Reopen with truncate
+    m_file.open(m_filePath, std::ios::out | std::ios::trunc);
+
+    if (!m_file.is_open()) {
+        std::cerr << "[LOGGER][ERROR] Cannot reopen log file for truncate: "
+                  << m_filePath << std::endl;
+    }
 }
 
 // ---------------------------------------------------------------------------

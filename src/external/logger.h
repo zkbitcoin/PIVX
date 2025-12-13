@@ -18,7 +18,7 @@ enum class LogSink {
 
 class Logger {
 public:
-    // Initialize once (loader)
+    // Initialize once (process lifetime)
     static void Init(
         LogSink sink,
         LogLevel level,
@@ -26,6 +26,11 @@ public:
         bool append
     );
 
+    // Reset log file (truncate if append=false)
+    // Call at start of each request for fresh log output
+    static void Reset();
+
+    // Shutdown (process cleanup)
     static void Shutdown();
 
     static void Log(
@@ -41,6 +46,8 @@ private:
     static std::ofstream     m_file;
     static LogLevel          m_level;
     static LogSink           m_sink;
+    static std::string       m_filePath;
+    static bool              m_append;
     static bool              m_initialized;
 };
 
