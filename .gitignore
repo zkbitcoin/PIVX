@@ -168,7 +168,7 @@ cmake-build-debug
 moc_*
 *.tmp
 ui_*
-build*
+build
 pivxd.*
 pivxd-new-gui.*
 /cov-int/
