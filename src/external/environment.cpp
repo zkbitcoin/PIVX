@@ -1,15 +1,16 @@
 // external/environment.cpp
 // ============================================================================
-// Minimal mock environment for UIX demos
-// - Initializes BOTH ECC contexts (VERIFY + SIGN)
-// - Sets chain params (REGTEST)
-// - Creates fake chainActive tip
-// - Sets up EvoDB + deterministicMNManager
+// Hybrid initialization model for concurrent request safety
 //
-// Emits FLOW steps in INIT / ENV scope shared by:
-//   • Masternode
-//   • Proof-of-Stake
-//   • Shielded (Sapling)
+// Process-level (once):
+//   - ECC contexts
+//   - Chain parameters
+//   - EvoDB + MN manager
+//   - Mock block index
+//
+// Request-level (per HTTP request):
+//   - Logger/Flow reset
+//   - MN list clear
 // ============================================================================
 
 #include "environment.h"
@@ -23,279 +24,207 @@
 #include "spork.h"
 #include "evo/evodb.h"
 #include "evo/deterministicmns.h"
+#include "masternodeman.h"
 #include "validation.h"
-
-#include "pubkey.h"   // ECCVerifyHandle
-#include "key.h"      // ECC_Start / ECC_Stop
+#include "pubkey.h"
+#include "key.h"
 
 #include <memory>
+#include <mutex>
 
 // ============================================================================
-// ECC (VERIFY context must be static lifetime)
+// STATE
 // ============================================================================
-static ECCVerifyHandle g_verify_handle;
+static std::mutex g_mutex;
+static bool g_ecc_init = false;
+static bool g_env_init = false;
 
-// ============================================================================
-// GLOBALS
-// ============================================================================
+static std::unique_ptr<ECCVerifyHandle> g_verify_handle;
 static std::unique_ptr<CEvoDB> g_evoDb;
 extern std::unique_ptr<CDeterministicMNManager> deterministicMNManager;
 
-// Track our mock blocks for cleanup
 static CBlockIndex* g_genesis = nullptr;
 static uint256 g_genesisHash;
 
 // ============================================================================
-// MOCK BLOCKCHAIN
+// INTERNAL HELPERS
 // ============================================================================
-static void mock_blockindex()
+static void setup_mock_chain()
 {
+    if (g_genesis) return;
+
     Flow::Step({
-        FlowScope::ENV,
+        FlowScope::INIT,
         FlowDomain::SHARED,
-        "ENV_CHAIN_INIT",
-        "Initialize mock blockchain",
-        "Create synthetic block index and chainActive tip",
-        "external/environment.cpp"
-    });
-
-    LOG_INFO("ENV", "Creating mock blockchain");
-
-    if (g_genesis) {
-        LOG_INFO("ENV", "Mock blockchain already initialized");
-        return;
-    }
-
-    // ------------------------------------------------------------
-    // Fake genesis block (height 0, no pprev)
-    // ------------------------------------------------------------
-    Flow::Step({
-        FlowScope::ENV,
-        FlowDomain::SHARED,
-        "ENV_GENESIS_BLOCK",
-        "Create genesis block",
-        "Create synthetic genesis block for mock chain",
-        "chain.h"
+        "INIT_MOCK_CHAIN",
+        "Create mock blockchain",
+        "Synthetic genesis block and chain tip",
+        "environment.cpp"
     });
 
     g_genesis = new CBlockIndex();
     g_genesis->nHeight = 0;
-    g_genesis->nTime   = GetTime() - 100;
-    g_genesis->nBits   = 0x1f00ffff;
+    g_genesis->nTime = GetTime() - 100;
+    g_genesis->nBits = 0x1f00ffff;
     g_genesis->nChainWork = 1;
-    g_genesis->pprev = nullptr;  // Genesis has no parent!
-
+    g_genesis->pprev = nullptr;
     g_genesis->SetStakeModifier(0x2222222222222222ULL, true);
 
-    g_genesisHash = uint256S(
-        "00000000000000000000000000000000000000000000000000000000000001"
-    );
+    g_genesisHash = uint256S("0000000000000000000000000000000000000000000000000000000000000001");
     g_genesis->phashBlock = &g_genesisHash;
     mapBlockIndex[g_genesisHash] = g_genesis;
 
-    // SetTip walks back via pprev - with pprev=nullptr it stops at genesis
     chainActive.SetTip(g_genesis);
     pindexBestHeader = g_genesis;
 
-    LOG_INFO("ENV", "Mock blockchain tip set successfully");
+    LOG_INFO("ENV", "Mock chain initialized");
 }
 
 // ============================================================================
-// SPORK MOCK (no-op)
+// PROCESS-LEVEL INIT (idempotent, thread-safe)
 // ============================================================================
-static void mock_sporks()
+void init_process()
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    if (!g_ecc_init) {
+        Flow::Step({
+            FlowScope::INIT,
+            FlowDomain::SHARED,
+            "INIT_ECC",
+            "Initialize ECC",
+            "secp256k1 sign/verify contexts",
+            "key.h"
+        });
+
+        ECC_Start();
+        g_verify_handle = std::make_unique<ECCVerifyHandle>();
+        g_ecc_init = true;
+
+        LOG_INFO("ENV", "ECC initialized");
+    }
+
+    if (!g_env_init) {
+        Flow::Step({
+            FlowScope::INIT,
+            FlowDomain::SHARED,
+            "INIT_ENV",
+            "Initialize environment",
+            "Chain params, EvoDB, mock chain",
+            "environment.cpp"
+        });
+
+        SelectParams(CBaseChainParams::REGTEST);
+
+        const std::string datadir = "/tmp/pivx_mock_env";
+        fs::create_directories(datadir);
+        gArgs.ForceSetArg("-datadir", datadir);
+        GetDataDir(true);
+
+        g_evoDb = std::make_unique<CEvoDB>(1 << 20);
+        deterministicMNManager = std::make_unique<CDeterministicMNManager>(*g_evoDb);
+
+        setup_mock_chain();
+
+        g_env_init = true;
+
+        LOG_INFO("ENV", "Environment initialized");
+    }
+}
+
+// ============================================================================
+// REQUEST LIFECYCLE
+// ============================================================================
+void begin_request()
+{
+    Logger::Reset();
+    Flow::Reset();
+
+    LOG_INFO("REQUEST", "Begin");
+
+    Flow::Step({
+        FlowScope::EXEC,
+        FlowDomain::SHARED,
+        "REQUEST_BEGIN",
+        "Request started",
+        "Logger/Flow reset, MN list cleared",
+        "environment.cpp"
+    });
+
+    mnodeman.Clear();
+}
+
+void end_request()
 {
     Flow::Step({
-        FlowScope::ENV,
+        FlowScope::EXEC,
         FlowDomain::SHARED,
-        "ENV_SPORKS_DISABLED",
-        "Disable sporks",
-        "Spork subsystem disabled in demo environment",
-        "spork.h"
+        "REQUEST_END",
+        "Request complete",
+        "Request processing finished",
+        "environment.cpp"
     });
 
-    LOG_WARN("ENV", "Sporks are disabled (demo environment)");
+    LOG_INFO("REQUEST", "End");
 }
 
 // ============================================================================
-// MN MOCK (no-op)
+// PROCESS-LEVEL SHUTDOWN
 // ============================================================================
-static void mock_mn()
+void shutdown_process()
 {
-    Flow::Step({
-        FlowScope::ENV,
-        FlowDomain::SHARED,
-        "ENV_MN_MOCK",
-        "Mock masternode subsystem",
-        "Masternode networking and wallet disabled",
-        "masternodeman.h"
-    });
+    std::lock_guard<std::mutex> lock(g_mutex);
 
-    LOG_INFO("ENV", "Masternode subsystem mocked (no network / no wallet)");
+    LOG_INFO("ENV", "Shutdown started");
+
+    if (g_env_init) {
+        chainActive.SetTip(nullptr);
+        pindexBestHeader = nullptr;
+
+        if (!g_genesisHash.IsNull()) {
+            mapBlockIndex.erase(g_genesisHash);
+        }
+
+        delete g_genesis;
+        g_genesis = nullptr;
+        g_genesisHash.SetNull();
+
+        deterministicMNManager.reset();
+        g_evoDb.reset();
+
+        g_env_init = false;
+    }
+
+    if (g_ecc_init) {
+        g_verify_handle.reset();
+        ECC_Stop();
+        g_ecc_init = false;
+    }
+
+    LOG_INFO("ENV", "Shutdown complete");
 }
 
 // ============================================================================
-// INIT ENVIRONMENT (IDEMPOTENT, SAFE)
-// ============================================================================
-void init_environment()
-{
-    Flow::Step({
-        FlowScope::INIT,
-        FlowDomain::SHARED,
-        "ENV_INIT_START",
-        "Initialize environment",
-        "Begin mock environment initialization",
-        "external/environment.cpp"
-    });
-
-    LOG_INFO("ENV", "Initializing mock environment");
-
-    // ------------------------------------------------------------
-    // ECC INITIALIZATION
-    // ------------------------------------------------------------
-    Flow::Step({
-        FlowScope::INIT,
-        FlowDomain::SHARED,
-        "ENV_ECC_INIT",
-        "Initialize ECC",
-        "Initialize secp256k1 VERIFY and SIGN contexts",
-        "key.h"
-    });
-
-    ECC_Start();
-
-    // ------------------------------------------------------------
-    // Chain parameters
-    // ------------------------------------------------------------
-    Flow::Step({
-        FlowScope::INIT,
-        FlowDomain::SHARED,
-        "ENV_CHAIN_PARAMS",
-        "Select REGTEST params",
-        "Select REGTEST chain parameters",
-        "chainparams.h"
-    });
-
-    SelectParams(CBaseChainParams::REGTEST);
-
-    // ------------------------------------------------------------
-    // Force datadir resolution BEFORE EvoDB
-    // ------------------------------------------------------------
-    const std::string datadir = "/tmp/pivx_mock_env";
-    fs::create_directories(datadir);
-
-    // IMPORTANT: set BEFORE GetDataDir() is used
-    gArgs.ForceSetArg("-datadir", datadir);
-
-    // Forces internal path caching
-    GetDataDir(true);
-
-    LOG_INFO("ENV", "Resolved datadir: " + GetDataDir().string());
-
-    // ------------------------------------------------------------
-    // EvoDB + deterministic MN manager
-    // ------------------------------------------------------------
-    Flow::Step({
-        FlowScope::INIT,
-        FlowDomain::SHARED,
-        "ENV_EVODB_INIT",
-        "Initialize EvoDB",
-        "Initialize EvoDB and deterministic masternode manager",
-        "evo/evodb.h"
-    });
-
-    g_evoDb = std::make_unique<CEvoDB>(1 << 20); // 1 MB cache
-    deterministicMNManager = std::make_unique<CDeterministicMNManager>(*g_evoDb);
-
-    // ------------------------------------------------------------
-    // Mock subsystems
-    // ------------------------------------------------------------
-    mock_blockindex();
-    mock_sporks();
-    mock_mn();
-
-    Flow::Step({
-        FlowScope::INIT,
-        FlowDomain::SHARED,
-        "ENV_INIT_DONE",
-        "Environment ready",
-        "Mock environment initialization complete",
-        "external/environment.cpp"
-    });
-
-    LOG_INFO("ENV", "Environment initialization complete");
-}
-
-// ============================================================================
-// CLEANUP ENVIRONMENT
-// Must be called before process exit to prevent double-free in CMainCleanup
-// ============================================================================
-void cleanup_environment()
-{
-    LOG_INFO("ENV", "Cleaning up mock environment");
-
-    // Clear chain active tip first
-    chainActive.SetTip(nullptr);
-    pindexBestHeader = nullptr;
-
-    // Remove our entry from mapBlockIndex (don't let CMainCleanup delete it)
-    mapBlockIndex.erase(g_genesisHash);
-
-    // Delete our block index ourselves
-    delete g_genesis;
-    g_genesis = nullptr;
-
-    // Clear hash
-    g_genesisHash.SetNull();
-
-    // Reset MN manager and EvoDB
-    deterministicMNManager.reset();
-    g_evoDb.reset();
-    
-    LOG_INFO("ENV", "Environment cleanup complete");
-}
-
-// ============================================================================
-// ADVANCE TIME (OPTIONAL)
+// UTILITIES
 // ============================================================================
 void advance_time(int64_t sec)
 {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
     if (!g_genesis) {
-        LOG_WARN("ENV", "advance_time called before genesis initialization");
+        LOG_WARN("ENV", "advance_time: no genesis");
         return;
     }
 
-    Flow::Step({
-        FlowScope::ENV,
-        FlowDomain::SHARED,
-        "ENV_TIME_ADVANCE",
-        "Advance mock time",
-        "Advance mock chain time",
-        "chain.h"
-    });
-
     g_genesis->nTime += sec;
-
-    LOG_INFO("ENV", "Advanced mock chain time by " + std::to_string(sec) + " seconds");
+    LOG_INFO("ENV", "Time advanced by " + std::to_string(sec) + "s");
 }
 
-// ============================================================================
-// DUMMY WALLET STUB (LINKER ONLY)
-// ============================================================================
-struct DummyWalletStruct { int unused = 0; };
-static DummyWalletStruct dummyWallet;
+struct DummyWallet { int unused = 0; };
+static DummyWallet g_dummy_wallet;
 
 CWallet& wallet()
 {
-    Flow::Step({
-        FlowScope::ENV,
-        FlowDomain::SHARED,
-        "ENV_WALLET_STUB",
-        "Access dummy wallet",
-        "Wallet stub accessed (linker-only, no real wallet)",
-        "wallet.h"
-    });
-
-    LOG_WARN("ENV", "Dummy wallet accessed (linker stub only)");
-    return *(CWallet*)&dummyWallet;
+    LOG_WARN("ENV", "Dummy wallet accessed");
+    return *(CWallet*)&g_dummy_wallet;
 }

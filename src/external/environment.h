@@ -2,32 +2,33 @@
 
 #include <stdint.h>
 
-// Forward declaration
 class CWallet;
 
+// ============================================================================
+// HYBRID INITIALIZATION MODEL
 //
-// Initialize a minimal internal environment so that
-// legacy masternode code works with *real PIVX logic*.
+// Process-level (once per library load):
+//   - ECC contexts (secp256k1)
+//   - Chain parameters
+//   - EvoDB + deterministic MN manager
+//   - Mock block index
 //
-// This does NOT build a full node, blockchain, PoS kernel,
-// or networking. It only mocks enough global state so that
-// mnodeman.Add(), .Copy(), .Rank() etc function normally.
-//
-void init_environment();
+// Request-level (per HTTP request):
+//   - Logger reset
+//   - Flow reset
+//   - Masternode list clear
+// ============================================================================
 
-//
-// Cleanup mock environment before exit.
-// Removes mock block indices from mapBlockIndex to prevent
-// double-free in CMainCleanup destructor.
-//
-void cleanup_environment();
+// Process-level init (idempotent, thread-safe)
+void init_process();
 
-//
-// Advance chain time (for PoS or ping simulation)
-//
+// Request lifecycle
+void begin_request();
+void end_request();
+
+// Process-level shutdown (call at process exit only)
+void shutdown_process();
+
+// Utilities
 void advance_time(int64_t sec);
-
-//
-// Access mock wallet (created in-memory)
-//
 CWallet& wallet();

@@ -1,4 +1,4 @@
-// src/external/external_api.cpp
+// external/external_api.cpp
 
 #include "external_api.h"
 #include "environment.h"
@@ -6,107 +6,103 @@
 #include "flow.h"
 
 #include <cstdlib>
+#include <mutex>
 #include <string>
 
-// Direct functions implemented in other files:
+// Demo step functions
 extern "C" const char* pivx_external_mn_step();
 extern "C" const char* pivx_external_pos_step();
 extern "C" const char* pivx_external_shield_step();
 
+// ============================================================================
+// STATE
+// ============================================================================
+static std::once_flag g_init_flag;
+static std::mutex g_request_mutex;
+
+// ============================================================================
+// INTERNAL: One-time logger/flow setup
+// ============================================================================
+static void init_logging()
+{
+    const char* logPathEnv = getenv("PIVX_UIX_LOG_PATH");
+    std::string logPath = logPathEnv ? logPathEnv : "/tmp/pivx-uix.log";
+
+    LogLevel level = LogLevel::INFO;
+    if (const char* lvl = getenv("PIVX_UIX_LOG_LEVEL")) {
+        std::string s(lvl);
+        if (s == "WARN")  level = LogLevel::WARN;
+        if (s == "ERROR") level = LogLevel::ERROR;
+    }
+
+    LogSink logSink = LogSink::BOTH;
+    if (const char* s = getenv("PIVX_UIX_LOG_SINK")) {
+        std::string v(s);
+        if (v == "CONSOLE") logSink = LogSink::CONSOLE;
+        else if (v == "FILE") logSink = LogSink::FILE;
+    }
+
+    // append=false so Reset() truncates
+    Logger::Init(logSink, level, logPath, false);
+
+    const char* flowPathEnv = getenv("PIVX_UIX_FLOW_PATH");
+    std::string flowPath = flowPathEnv ? flowPathEnv : "/tmp/pivx-uix.flow";
+
+    FlowSink flowSink = FlowSink::BOTH;
+    if (const char* s = getenv("PIVX_UIX_FLOW_SINK")) {
+        std::string v(s);
+        if (v == "MEMORY") flowSink = FlowSink::MEMORY;
+        else if (v == "FILE") flowSink = FlowSink::FILE;
+    }
+
+    Flow::Init(flowSink, flowPath, false);
+}
+
+// ============================================================================
+// EXPORTED API
+// ============================================================================
 extern "C" {
 
-    PIVX_EXTERNAL_API void pivx_external_init()
-    {
-        static bool once = false;
+PIVX_EXTERNAL_API void pivx_external_init()
+{
+    std::call_once(g_init_flag, []() {
+        init_logging();
+        init_process();
+    });
+}
 
-        // ============================================================
-        // LOGGER (one-time init, process lifetime)
-        // ============================================================
-        if (!once) {
-            const char* pathEnv = getenv("PIVX_UIX_LOG_PATH");
-            std::string logPath = pathEnv ? pathEnv : "/tmp/pivx-uix.log";
+PIVX_EXTERNAL_API void pivx_external_shutdown()
+{
+    shutdown_process();
+    Flow::Shutdown();
+    Logger::Shutdown();
+}
 
-            const char* appendEnv = getenv("PIVX_UIX_LOG_APPEND");
-            bool logAppend = !(appendEnv && std::string(appendEnv) == "0");
+PIVX_EXTERNAL_API void pivx_external_begin_request()
+{
+    g_request_mutex.lock();
+    begin_request();
+}
 
-            LogLevel level = LogLevel::INFO;
-            if (const char* lvl = getenv("PIVX_UIX_LOG_LEVEL")) {
-                std::string s(lvl);
-                if (s == "WARN")  level = LogLevel::WARN;
-                if (s == "ERROR") level = LogLevel::ERROR;
-            }
+PIVX_EXTERNAL_API void pivx_external_end_request()
+{
+    end_request();
+    g_request_mutex.unlock();
+}
 
-            LogSink sink = LogSink::BOTH;
-            if (const char* s = getenv("PIVX_UIX_LOG_SINK")) {
-                std::string v(s);
-                if (v == "MEMORY") sink = LogSink::CONSOLE;
-                else if (v == "FILE") sink = LogSink::FILE;
-                else if (v == "BOTH") sink = LogSink::BOTH;
-            }
+PIVX_EXTERNAL_API const char* pivx_external_mn()
+{
+    return pivx_external_mn_step();
+}
 
-            Logger::Init(sink, level, logPath, logAppend);
+PIVX_EXTERNAL_API const char* pivx_external_pos()
+{
+    return pivx_external_pos_step();
+}
 
-            // ============================================================
-            // FLOW (one-time init, process lifetime)
-            // ============================================================
-            const char* flowPathEnv = getenv("PIVX_UIX_FLOW_PATH");
-            std::string flowPath = flowPathEnv ? flowPathEnv : "/tmp/pivx-uix.flow";
+PIVX_EXTERNAL_API const char* pivx_external_shield()
+{
+    return pivx_external_shield_step();
+}
 
-            const char* flowAppendEnv = getenv("PIVX_UIX_FLOW_APPEND");
-            bool flowAppend = !(flowAppendEnv && std::string(flowAppendEnv) == "0");
-
-            FlowSink flowSink = FlowSink::BOTH;
-            if (const char* s = getenv("PIVX_UIX_FLOW_SINK")) {
-                std::string v(s);
-                if (v == "MEMORY") flowSink = FlowSink::MEMORY;
-                else if (v == "FILE") flowSink = FlowSink::FILE;
-                else if (v == "BOTH") flowSink = FlowSink::BOTH;
-            }
-
-            Flow::Init(flowSink, flowPath, flowAppend);
-
-            once = true;
-        }
-
-        // ============================================================
-        // PER-REQUEST RESET (truncate if append=false)
-        // ============================================================
-        Logger::Reset();
-        Flow::Reset();
-
-        // Log after reset so this is the first line in fresh log
-        LOG_INFO("INIT", "Request started");
-
-        // ============================================================
-        // Environment (idempotent)
-        // ============================================================
-        init_environment();
-    }
-
-    PIVX_EXTERNAL_API void pivx_external_shutdown()
-    {
-        LOG_INFO("SHUTDOWN", "Shutdown requested");
-
-        // Cleanup mock environment to prevent double-free on exit
-        cleanup_environment();
-
-        LOG_INFO("SHUTDOWN", "External API shutdown complete");
-    }
-
-    // ------------------- EXPORTED API -------------------
-
-    PIVX_EXTERNAL_API const char* pivx_external_mn()
-    {
-        return pivx_external_mn_step();
-    }
-
-    PIVX_EXTERNAL_API const char* pivx_external_pos()
-    {
-        return pivx_external_pos_step();
-    }
-
-    PIVX_EXTERNAL_API const char* pivx_external_shield()
-    {
-        return pivx_external_shield_step();
-    }
 } // extern "C"

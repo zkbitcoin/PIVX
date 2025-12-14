@@ -1,8 +1,6 @@
 #pragma once
 
-/* ---------------------------------------------------------
- * Save and undefine PIVX macros BEFORE including relic
- * --------------------------------------------------------- */
+/* Save and undefine PIVX macros BEFORE including relic */
 
 #ifdef VERSION
 #define _PIVX_SAVED_VERSION VERSION
@@ -39,14 +37,10 @@
 #undef PACKAGE_BUGREPORT
 #endif
 
-/* ---------------------------------------------------------
- * Now include relic (it will define its own versions)
- * --------------------------------------------------------- */
+/* Include relic */
 #include <relic_conf.h>
 
-/* ---------------------------------------------------------
- * Undefine RELIC macros
- * --------------------------------------------------------- */
+/* Undefine RELIC macros */
 #undef VERSION
 #undef PACKAGE_NAME
 #undef PACKAGE_VERSION
@@ -55,9 +49,7 @@
 #undef PACKAGE_URL
 #undef PACKAGE_BUGREPORT
 
-/* ---------------------------------------------------------
- * Restore PIVX macros if they were defined
- * --------------------------------------------------------- */
+/* Restore PIVX macros */
 #ifdef _PIVX_SAVED_VERSION
 #define VERSION _PIVX_SAVED_VERSION
 #undef _PIVX_SAVED_VERSION

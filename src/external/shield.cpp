@@ -1,14 +1,6 @@
 // external/shield.cpp
 // ============================================================================
-// Level 2 Sapling Demo (UIX)
-//
-// Demonstrates:
-//  • Sapling key generation (NO wallet)
-//  • Note creation
-//  • Commitment (cmu)
-//  • Merkle witness + anchor (synthetic tree)
-//  • Nullifier derivation
-//
+// Level 2 Sapling Demo
 // ============================================================================
 
 #include "external/logger.h"
@@ -26,9 +18,6 @@
 #include <sstream>
 #include <vector>
 
-// ----------------------------------------------------------------------------
-// ABI-safe return buffer
-// ----------------------------------------------------------------------------
 static std::string g_last;
 static const char* ret(const std::string& s)
 {
@@ -36,9 +25,6 @@ static const char* ret(const std::string& s)
     return g_last.c_str();
 }
 
-// ----------------------------------------------------------------------------
-// PUBLIC UIX ENTRY POINT
-// ----------------------------------------------------------------------------
 extern "C"
 const char* pivx_external_shield_step(void)
 {
@@ -47,21 +33,19 @@ const char* pivx_external_shield_step(void)
         FlowDomain::SHIELD,
         "SHIELD_ENTRY",
         "Start Sapling demo",
-        "Entry point for Sapling Level 2 demo execution",
-        "external/shield.cpp"
+        "Entry point for Sapling Level 2 demo",
+        "shield.cpp"
     });
 
-    LOG_INFO("SHIELD", "Starting Sapling Level 2 demo");
+    LOG_INFO("SHIELD", "Starting Sapling demo");
 
-    // --------------------------------------------------------
-    // 1) Generate Sapling keys (NO wallet)
-    // --------------------------------------------------------
+    // 1) Generate Sapling keys
     Flow::Step({
         FlowScope::EXEC,
         FlowDomain::SHIELD,
         "SHIELD_KEYGEN",
         "Generate Sapling keys",
-        "Generate Sapling master spending key and viewing key",
+        "Master spending key and viewing key",
         "sapling/zip32.h"
     });
 
@@ -73,11 +57,9 @@ const char* pivx_external_shield_step(void)
     auto fvk  = xsk.expsk.full_viewing_key();
     auto addr = xsk.DefaultAddress();
 
-    LOG_INFO("SHIELD", "Sapling payment address derived successfully");
+    LOG_INFO("SHIELD", "Sapling payment address derived");
 
-    // --------------------------------------------------------
-    // 2) Create Sapling note
-    // --------------------------------------------------------
+    // 2) Create note
     uint64_t value = 12345678;
 
     Flow::Step({
@@ -85,78 +67,65 @@ const char* pivx_external_shield_step(void)
         FlowDomain::SHIELD,
         "SHIELD_NOTE_CREATE",
         "Create Sapling note",
-        "Create Sapling note with value and recipient address",
+        "Note with value and recipient address",
         "sapling/note.h"
     });
 
-    LOG_INFO(
-        "SHIELD",
-        "Creating Sapling note with value " + std::to_string(value)
-    );
+    LOG_INFO("SHIELD", "Creating note with value " + std::to_string(value));
 
     libzcash::SaplingNote note(addr, value);
 
-    // --------------------------------------------------------
-    // 3) Commitment (cmu)
-    // --------------------------------------------------------
+    // 3) Commitment
     Flow::Step({
         FlowScope::EXEC,
         FlowDomain::SHIELD,
         "SHIELD_COMMITMENT",
         "Compute note commitment",
-        "Compute Sapling note commitment (cmu)",
+        "Sapling note commitment (cmu)",
         "sapling/note.h"
     });
 
     auto cmu_opt = note.cmu();
     if (!cmu_opt) {
-        LOG_ERROR("SHIELD", "Failed to compute note commitment (cmu)");
+        LOG_ERROR("SHIELD", "cmu generation failed");
         return ret("{\"error\":\"cmu generation failed\"}");
     }
 
     uint256 cmu = cmu_opt.get();
+    LOG_INFO("SHIELD", "Note commitment computed");
 
-    LOG_INFO("SHIELD", "Note commitment (cmu) computed");
-
-    // --------------------------------------------------------
-    // 4) Synthetic Merkle tree
-    // --------------------------------------------------------
+    // 4) Merkle tree
     Flow::Step({
         FlowScope::EXEC,
         FlowDomain::SHIELD,
         "SHIELD_MERKLE_TREE",
         "Build Merkle tree",
-        "Insert commitment into synthetic Sapling Merkle tree",
+        "Insert commitment into synthetic tree",
         "sapling/incrementalmerkletree.h"
     });
 
-    LOG_INFO("SHIELD", "Building synthetic Sapling Merkle tree");
+    LOG_INFO("SHIELD", "Building Merkle tree");
 
     SaplingMerkleTree tree;
     tree.append(cmu);
 
-    auto witness   = tree.witness();
+    auto witness = tree.witness();
     uint256 anchor = tree.root();
     uint32_t position = witness.position();
 
-    LOG_INFO(
-        "SHIELD",
-        "Merkle witness created at position " + std::to_string(position)
-    );
+    LOG_INFO("SHIELD", "Witness at position " + std::to_string(position));
 
-    // --------------------------------------------------------
     // 5) Nullifier
-    // --------------------------------------------------------
     Flow::Step({
         FlowScope::EXEC,
         FlowDomain::SHIELD,
         "SHIELD_NULLIFIER",
         "Derive nullifier",
-        "Derive nullifier from note, viewing key, and position",
+        "Nullifier from note, viewing key, position",
         "sapling/note.h"
     });
 
-    LOG_INFO("SHIELD", "Deriving nullifier from note and viewing key");
+    LOG_INFO("SHIELD", "Deriving nullifier");
 
     auto nf_opt = note.nullifier(fvk, position);
     if (!nf_opt) {
@@ -165,19 +134,16 @@ const char* pivx_external_shield_step(void)
     }
 
     uint256 nullifier = nf_opt.get();
+    LOG_INFO("SHIELD", "Nullifier derived");
 
-    LOG_INFO("SHIELD", "Nullifier derived successfully");
-
-    // --------------------------------------------------------
     // 6) JSON output
-    // --------------------------------------------------------
     Flow::Step({
         FlowScope::EXEC,
         FlowDomain::SHIELD,
         "SHIELD_RESULT",
         "Assemble result",
-        "Assemble Sapling demo result JSON",
-        "external/shield.cpp"
+        "Sapling demo result JSON",
+        "shield.cpp"
     });
 
     std::ostringstream o;
@@ -192,24 +158,11 @@ const char* pivx_external_shield_step(void)
       << "},"
       << "\"validation\":{"
       << "\"cryptography\":{\"checked\":true,\"valid\":true},"
-      << "\"proof\":{"
-         "\"checked\":false,"
-         "\"reason\":\"Spend proofs are generated during transaction construction\""
-        "},"
-      << "\"encryption\":{"
-         "\"checked\":false,"
-         "\"reason\":\"Note encryption is performed during transaction construction\""
-        "},"
-      << "\"consensus\":{"
-         "\"checked\":false,"
-         "\"reason\":\"No blockchain or consensus state loaded\""
-        "}"
+      << "\"proof\":{\"checked\":false,\"reason\":\"Generated during tx construction\"},"
+      << "\"encryption\":{\"checked\":false,\"reason\":\"Performed during tx construction\"},"
+      << "\"consensus\":{\"checked\":false,\"reason\":\"No blockchain loaded\"}"
       << "},"
-      << "\"environment\":{"
-      << "\"level\":2,"
-      << "\"wallet_loaded\":false,"
-      << "\"blockchain_loaded\":false"
-      << "}"
+      << "\"environment\":{\"level\":2,\"wallet_loaded\":false,\"blockchain_loaded\":false}"
       << "}";
 
     Flow::Step({
@@ -217,11 +170,11 @@ const char* pivx_external_shield_step(void)
         FlowDomain::SHIELD,
         "SHIELD_EXIT",
         "Return result",
-        "Return Sapling demo result to UIX",
-        "external/shield.cpp"
+        "Return Sapling result to UIX",
+        "shield.cpp"
     });
 
-    LOG_INFO("SHIELD", "Sapling Level 2 demo complete");
+    LOG_INFO("SHIELD", "Sapling demo complete");
 
     return ret(o.str());
 }

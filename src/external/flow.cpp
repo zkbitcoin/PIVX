@@ -1,7 +1,4 @@
 // external/flow.cpp
-// ============================================================================
-// Flow tracing implementation - JSON output
-// ============================================================================
 
 #include "external/flow.h"
 
@@ -9,64 +6,43 @@
 #include <sstream>
 #include <iomanip>
 
-std::mutex                Flow::m_mutex;
-std::vector<FlowStep>     Flow::m_steps;
-FlowSink                  Flow::m_sink = FlowSink::MEMORY;
-std::string               Flow::m_filePath;
-bool                      Flow::m_initialized = false;
+std::mutex            Flow::m_mutex;
+std::vector<FlowStep> Flow::m_steps;
+FlowSink              Flow::m_sink = FlowSink::MEMORY;
+std::string           Flow::m_filePath;
+bool                  Flow::m_initialized = false;
 
-// ---------------------------------------------------------------------------
-// Init
-// ---------------------------------------------------------------------------
-void Flow::Init(FlowSink sink,
-                const std::string& filePath,
-                bool append)
+void Flow::Init(FlowSink sink, const std::string& filePath, bool append)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_initialized) return;
 
     m_sink = sink;
     m_filePath = filePath;
-
-    // For JSON output, we always write the complete file on shutdown
-    // append mode is ignored for JSON (we rebuild the full array each time)
     (void)append;
 
     m_initialized = true;
 }
 
-// ---------------------------------------------------------------------------
-// Shutdown - write final JSON file
-// ---------------------------------------------------------------------------
 void Flow::Shutdown()
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-
     if (m_sink == FlowSink::FILE || m_sink == FlowSink::BOTH) {
         writeJsonFileUnlocked();
     }
 }
 
-// ---------------------------------------------------------------------------
-// Clear in-memory steps (per EXEC run)
-// ---------------------------------------------------------------------------
 void Flow::Clear()
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_steps.clear();
 }
 
-// ---------------------------------------------------------------------------
-// Reset flow state (memory + file)
-// ---------------------------------------------------------------------------
 void Flow::Reset()
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-
-    // Clear in-memory steps
     m_steps.clear();
 
-    // Truncate JSON file immediately so UI never sees stale flow
     if (!m_filePath.empty()) {
         std::ofstream file(m_filePath, std::ios::out | std::ios::trunc);
         if (file.is_open()) {
@@ -76,9 +52,6 @@ void Flow::Reset()
     }
 }
 
-// ---------------------------------------------------------------------------
-// Record a step
-// ---------------------------------------------------------------------------
 void Flow::Step(const FlowStep& step)
 {
     if (!m_initialized) return;
@@ -86,23 +59,16 @@ void Flow::Step(const FlowStep& step)
     std::lock_guard<std::mutex> lock(m_mutex);
     m_steps.push_back(step);
 
-    // Write incrementally to file for real-time updates
     if (m_sink == FlowSink::FILE || m_sink == FlowSink::BOTH) {
         writeJsonFileUnlocked();
     }
 }
 
-// ---------------------------------------------------------------------------
-// Accessor (UIX reads this)
-// ---------------------------------------------------------------------------
 const std::vector<FlowStep>& Flow::Steps()
 {
     return m_steps;
 }
 
-// ---------------------------------------------------------------------------
-// Escape string for JSON
-// ---------------------------------------------------------------------------
 std::string Flow::escapeJson(const std::string& str)
 {
     std::ostringstream out;
@@ -127,9 +93,6 @@ std::string Flow::escapeJson(const std::string& str)
     return out.str();
 }
 
-// ---------------------------------------------------------------------------
-// Convert single step to JSON object string
-// ---------------------------------------------------------------------------
 std::string Flow::stepToJson(const FlowStep& step)
 {
     std::ostringstream o;
@@ -145,41 +108,27 @@ std::string Flow::stepToJson(const FlowStep& step)
     return o.str();
 }
 
-// ---------------------------------------------------------------------------
-// Build JSON string from current steps (caller must hold mutex)
-// ---------------------------------------------------------------------------
 std::string Flow::buildJsonUnlocked()
 {
     std::ostringstream o;
-    o << "{\n";
-    o << "  \"steps\": [\n";
+    o << "{\n  \"steps\": [\n";
 
     for (size_t i = 0; i < m_steps.size(); ++i) {
         o << stepToJson(m_steps[i]);
-        if (i < m_steps.size() - 1) {
-            o << ",";
-        }
+        if (i < m_steps.size() - 1) o << ",";
         o << "\n";
     }
 
-    o << "  ]\n";
-    o << "}\n";
-
+    o << "  ]\n}\n";
     return o.str();
 }
 
-// ---------------------------------------------------------------------------
-// Get all steps as JSON string (public, acquires lock)
-// ---------------------------------------------------------------------------
 std::string Flow::ToJson()
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     return buildJsonUnlocked();
 }
 
-// ---------------------------------------------------------------------------
-// Write complete JSON file (caller must hold mutex)
-// ---------------------------------------------------------------------------
 void Flow::writeJsonFileUnlocked()
 {
     if (m_filePath.empty()) return;
