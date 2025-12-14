@@ -712,7 +712,12 @@ libpivx_external_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIC_FLAGS)
 # -no-undefined: all symbols must be resolved
 # -avoid-version: don't add version suffix to library name
 # -export-dynamic: export all symbols for dlopen/dlsym access
-libpivx_external_la_LDFLAGS = -shared -no-undefined -avoid-version -export-dynamic
+# libpivx_external_la_LDFLAGS = -shared -no-undefined -avoid-version -export-dynamic
+libpivx_external_la_LDFLAGS = \
+  -module \
+  -no-undefined \
+  -avoid-version \
+  -export-dynamic
 
 # External library dependencies
 # All static libraries linked in MUST be compiled with PIC_FLAGS
