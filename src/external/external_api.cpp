@@ -15,8 +15,6 @@ extern "C" const char* pivx_external_shield_step();
 
 extern "C" {
 
-    __attribute__((visibility("default")))
-
     PIVX_EXTERNAL_API void pivx_external_init()
     {
         static bool once = false;
@@ -76,8 +74,6 @@ extern "C" {
         Logger::Reset();
         Flow::Reset();
 
-        pivx_external_reset();
-
         // Log after reset so this is the first line in fresh log
         LOG_INFO("INIT", "Request started");
 
@@ -87,21 +83,14 @@ extern "C" {
         init_environment();
     }
 
-    PIVX_EXTERNAL_API void pivx_external_reset() {
-
-        // ============================================================
-        // PER-REQUEST RESET (truncate if append=false)
-        // ============================================================
-        Logger::Reset();
-        Flow::Reset();
-
-    }
-
     PIVX_EXTERNAL_API void pivx_external_shutdown()
     {
-        // NO-OP
-        // Flow is process-lifetime.
-        // Per-request cleanup is handled by Flow::Reset()
+        LOG_INFO("SHUTDOWN", "Shutdown requested");
+
+        // Cleanup mock environment to prevent double-free on exit
+        cleanup_environment();
+
+        LOG_INFO("SHUTDOWN", "External API shutdown complete");
     }
 
     // ------------------- EXPORTED API -------------------

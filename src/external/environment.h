@@ -16,6 +16,13 @@ class CWallet;
 void init_environment();
 
 //
+// Cleanup mock environment before exit.
+// Removes mock block indices from mapBlockIndex to prevent
+// double-free in CMainCleanup destructor.
+//
+void cleanup_environment();
+
+//
 // Advance chain time (for PoS or ping simulation)
 //
 void advance_time(int64_t sec);

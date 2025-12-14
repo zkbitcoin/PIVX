@@ -14,7 +14,6 @@ extern "C" {
 #endif
 
     PIVX_EXTERNAL_API void        pivx_external_init(void);
-    PIVX_EXTERNAL_API void        pivx_external_reset(void);
     PIVX_EXTERNAL_API const char* pivx_external_mn_step(void);
     PIVX_EXTERNAL_API const char* pivx_external_pos_step(void);
     PIVX_EXTERNAL_API const char* pivx_external_shield_step(void);
