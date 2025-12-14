@@ -76,7 +76,7 @@ extern "C" {
         Logger::Reset();
         Flow::Reset();
 
-        pivx_external_reset()
+        pivx_external_reset();
 
         // Log after reset so this is the first line in fresh log
         LOG_INFO("INIT", "Request started");
