@@ -38,8 +38,6 @@ static ECCVerifyHandle g_verify_handle;
 // ============================================================================
 // GLOBALS
 // ============================================================================
-static bool g_env_ready = false;
-
 static std::unique_ptr<CEvoDB> g_evoDb;
 extern std::unique_ptr<CDeterministicMNManager> deterministicMNManager;
 
@@ -141,11 +139,6 @@ static void mock_mn()
 // ============================================================================
 void init_environment()
 {
-    if (g_env_ready) {
-        LOG_INFO("ENV", "Environment already initialized");
-        return;
-    }
-
     Flow::Step({
         FlowScope::INIT,
         FlowDomain::SHARED,
@@ -221,8 +214,6 @@ void init_environment()
     mock_sporks();
     mock_mn();
 
-    g_env_ready = true;
-
     Flow::Step({
         FlowScope::INIT,
         FlowDomain::SHARED,
@@ -241,10 +232,6 @@ void init_environment()
 // ============================================================================
 void cleanup_environment()
 {
-    if (!g_env_ready) {
-        return;
-    }
-
     LOG_INFO("ENV", "Cleaning up mock environment");
 
     // Clear chain active tip first
@@ -264,9 +251,7 @@ void cleanup_environment()
     // Reset MN manager and EvoDB
     deterministicMNManager.reset();
     g_evoDb.reset();
-
-    g_env_ready = false;
-
+    
     LOG_INFO("ENV", "Environment cleanup complete");
 }
 
