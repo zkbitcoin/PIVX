@@ -44,9 +44,7 @@ static std::unique_ptr<CEvoDB> g_evoDb;
 extern std::unique_ptr<CDeterministicMNManager> deterministicMNManager;
 
 // Track our mock blocks for cleanup
-static CBlockIndex* g_prev_block = nullptr;
 static CBlockIndex* g_genesis = nullptr;
-static uint256 g_prevHash;
 static uint256 g_genesisHash;
 
 // ============================================================================
@@ -71,34 +69,7 @@ static void mock_blockindex()
     }
 
     // ------------------------------------------------------------
-    // Fake previous block
-    // ------------------------------------------------------------
-    Flow::Step({
-        FlowScope::ENV,
-        FlowDomain::SHARED,
-        "ENV_PREV_BLOCK",
-        "Create previous block",
-        "Create synthetic previous block for mock chain",
-        "chain.h"
-    });
-
-    g_prev_block = new CBlockIndex();
-    g_prev_block->nHeight = -1;
-    g_prev_block->nTime   = GetTime() - 200;
-    g_prev_block->nBits   = 0x1f00ffff;
-    g_prev_block->nChainWork = 1;
-    g_prev_block->pprev = nullptr;
-
-    g_prev_block->SetStakeModifier(0x1111111111111111ULL, true);
-
-    g_prevHash = uint256S(
-        "00000000000000000000000000000000000000000000000000000000000000"
-    );
-    g_prev_block->phashBlock = &g_prevHash;
-    mapBlockIndex[g_prevHash] = g_prev_block;
-
-    // ------------------------------------------------------------
-    // Fake genesis block
+    // Fake genesis block (height 0, no pprev)
     // ------------------------------------------------------------
     Flow::Step({
         FlowScope::ENV,
@@ -112,9 +83,9 @@ static void mock_blockindex()
     g_genesis = new CBlockIndex();
     g_genesis->nHeight = 0;
     g_genesis->nTime   = GetTime() - 100;
-    g_genesis->nBits   = g_prev_block->nBits;
-    g_genesis->nChainWork = 2;
-    g_genesis->pprev = g_prev_block;
+    g_genesis->nBits   = 0x1f00ffff;
+    g_genesis->nChainWork = 1;
+    g_genesis->pprev = nullptr;  // Genesis has no parent!
 
     g_genesis->SetStakeModifier(0x2222222222222222ULL, true);
 
@@ -124,6 +95,7 @@ static void mock_blockindex()
     g_genesis->phashBlock = &g_genesisHash;
     mapBlockIndex[g_genesisHash] = g_genesis;
 
+    // SetTip walks back via pprev - with pprev=nullptr it stops at genesis
     chainActive.SetTip(g_genesis);
     pindexBestHeader = g_genesis;
 
@@ -279,20 +251,15 @@ void cleanup_environment()
     chainActive.SetTip(nullptr);
     pindexBestHeader = nullptr;
 
-    // Remove our entries from mapBlockIndex (don't let CMainCleanup delete them)
+    // Remove our entry from mapBlockIndex (don't let CMainCleanup delete it)
     mapBlockIndex.erase(g_genesisHash);
-    mapBlockIndex.erase(g_prevHash);
 
-    // Delete our block indices ourselves
+    // Delete our block index ourselves
     delete g_genesis;
     g_genesis = nullptr;
 
-    delete g_prev_block;
-    g_prev_block = nullptr;
-
-    // Clear hashes
+    // Clear hash
     g_genesisHash.SetNull();
-    g_prevHash.SetNull();
 
     // Reset MN manager and EvoDB
     deterministicMNManager.reset();
