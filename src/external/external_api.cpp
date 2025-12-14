@@ -76,6 +76,8 @@ extern "C" {
         Logger::Reset();
         Flow::Reset();
 
+        pivx_external_rest()
+
         // Log after reset so this is the first line in fresh log
         LOG_INFO("INIT", "Request started");
 
@@ -83,6 +85,16 @@ extern "C" {
         // Environment (idempotent)
         // ============================================================
         init_environment();
+    }
+
+    PIVX_EXTERNAL_API void pivx_external_rest() {
+
+        // ============================================================
+        // PER-REQUEST RESET (truncate if append=false)
+        // ============================================================
+        Logger::Reset();
+        Flow::Reset();
+
     }
 
     PIVX_EXTERNAL_API void pivx_external_shutdown()
